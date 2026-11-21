@@ -1,0 +1,114 @@
+import {chromium} from 'playwright-core';
+import {spawn} from 'node:child_process';
+import {existsSync, mkdtempSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import assert from 'node:assert/strict';
+import {once} from 'node:events';
+import {createServer} from 'node:net';
+
+const portFinder=createServer().listen(0,'127.0.0.1');
+await once(portFinder,'listening');
+const port=portFinder.address().port;
+await new Promise(resolve=>portFinder.close(resolve));
+const base='http://127.0.0.1:'+port;
+const py=process.platform==='win32'?'.venv/Scripts/python.exe':'.venv/bin/python';
+const server=spawn(py,['-m','uvicorn','backend.main:app','--port',String(port)],{env:{...process.env,STUDY_DATA:mkdtempSync(join(tmpdir(),'study-ui-')),OPENAI_API_KEY:''},stdio:['ignore','ignore','inherit']});
+const executablePath=process.env.CHROME_PATH||['C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/google-chrome','/usr/bin/chromium'].find(existsSync);
+let browser;
+try{
+  for(let i=0;i<100;i++){try{if((await fetch(base+'/api/roads')).ok)break}catch{}await new Promise(r=>setTimeout(r,100))}
+  browser=await chromium.launch({executablePath,headless:true});
+  const page=await browser.newPage();
+  page.on('pageerror',err=>console.error('Browser error:',err.message));
+  await page.goto(base);
+  const settingsButton=page.getByRole('button',{name:'Cài đặt',exact:true});
+  await settingsButton.click();
+  await page.getByLabel('Nguồn AI').selectOption('codex');
+  const modelSelect=page.getByLabel('Model Codex');
+  const modelId=await modelSelect.locator('option').evaluateAll(options=>options[1]?.value||'');
+  await modelSelect.selectOption(modelId);
+  await page.getByRole('button',{name:'Lưu cài đặt'}).click();
+  await page.getByRole('dialog').waitFor({state:'hidden'});
+  await page.reload();
+  await settingsButton.click();
+  assert.equal(await page.getByLabel('Nguồn AI').inputValue(),'codex');
+  assert.equal(await page.getByLabel('Model Codex').inputValue(),modelId);
+  await page.getByLabel('Nguồn AI').selectOption('openai');
+  if(process.platform==='win32'){
+    await page.getByLabel('OpenAI API key',{exact:true}).fill('offline-test-secret');
+    await page.getByRole('button',{name:'Lưu cài đặt'}).click();
+    await page.getByRole('dialog').waitFor({state:'hidden'});
+    const publicSettings=await (await fetch(base+'/api/settings')).text();
+    assert.equal(JSON.parse(publicSettings).saved_key,true);
+    assert.ok(!publicSettings.includes('offline-test-secret'));
+    await settingsButton.click();
+    await page.getByLabel('Xóa khóa đã lưu trên máy').check();
+  }
+  await page.getByRole('button',{name:'Lưu cài đặt'}).click();
+  await page.getByRole('dialog').waitFor({state:'hidden'});
+  const time=page.getByRole('slider',{name:'Thời gian'});
+  await page.waitForFunction(()=>document.querySelector('input[type=range]')?.disabled===false,null,{timeout:10000}).catch(async e=>{console.error(await page.locator('figure').innerText());throw e});
+  await time.fill('120');
+  await page.getByText('19,62 m',{exact:true}).first().waitFor();
+  await page.getByRole('button',{name:'Phát',exact:true}).click();
+  await page.getByRole('button',{name:'Dừng',exact:true}).click();
+  await time.fill('120');
+  await page.getByText('Điều chỉnh điều kiện ban đầu').click();
+  await page.getByLabel('Gia tốc (m/s²)').fill('5');
+  await page.getByRole('button',{name:'Áp dụng'}).click();
+  await page.getByText('10 m',{exact:true}).waitFor();
+  await page.locator('[data-block=i0]').evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);const s=getSelection();s.removeAllRanges();s.addRange(range);el.dispatchEvent(new MouseEvent('mouseup',{bubbles:true}))});
+  await page.getByRole('dialog').waitFor();
+  assert.match(await page.locator('dialog small').innerText(),/s = 10/);
+  await page.getByRole('button',{name:'Đóng',exact:true}).click();
+  await page.getByLabel('Đáp số và đơn vị').fill('1962 cm');
+  await page.getByRole('button',{name:'Kiểm tra đáp án'}).first().click();
+  await page.getByText('Chính xác.',{exact:true}).waitFor();
+  await page.reload();
+  await page.getByText('Chính xác.',{exact:true}).waitFor();
+  await page.locator('mark').first().click();
+  await page.getByRole('dialog').waitFor();
+  await page.getByRole('button',{name:'Đóng',exact:true}).click();
+  await page.getByRole('button',{name:'Tạo lộ trình'}).first().click();
+  await page.getByLabel('Mục tiêu học').fill('Đọc đồ thị');
+  await page.getByRole('button',{name:'Tạo bản nháp'}).click();
+  await page.getByRole('alert').filter({hasText:'OPENAI_API_KEY'}).waitFor();
+  await page.getByRole('button',{name:'Đóng',exact:true}).click();
+  await page.setViewportSize({width:375,height:820});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  // Simulate a malformed generated artifact, then a manual code-only repair.
+  let good, repairs=0;
+  await page.route('**/api/lesson/vat-ly/roi-tu-do',async route=>{
+    const response=await route.fetch(), b=await response.json();
+    good=b.doc.illustrations[0];
+    b.doc.illustrations[0]={...good,html:'<img src="https://invalid.example/illustration.png">'};
+    await route.fulfill({json:b});
+  });
+  await page.route('**/api/repair/**',async route=>{
+    repairs++;
+    if(!route.request().postDataJSON().manual)await route.fulfill({status:502,json:{detail:'Lỗi sửa minh họa'}});
+    else await route.fulfill({json:good});
+  });
+  const external=[];
+  page.on('request',request=>{if(request.url().includes('invalid.example'))external.push(request.url())});
+  await page.reload();
+  await page.getByText('Error: Lỗi sửa minh họa',{exact:false}).first().waitFor();
+  await page.getByRole('button',{name:'Tạo lại minh họa'}).click();
+  await page.waitForFunction(()=>document.querySelector('input[type=range]')?.disabled===false);
+  assert.equal(repairs,2);
+  assert.deepEqual(external,[]);
+  await page.getByLabel('Ngôn ngữ').selectOption('en');
+  await page.getByRole('heading',{name:'Free fall',exact:true}).waitFor();
+  const question=page.locator('#quiz form').first();
+  await question.getByLabel('Answer and unit').fill('1962 cm');
+  await question.getByRole('button',{name:'Check answer'}).click();
+  await question.getByText('Correct.',{exact:true}).waitFor();
+  await page.reload();
+  await question.getByText('Correct.',{exact:true}).waitFor();
+  assert.equal(await page.locator('html').getAttribute('lang'),'en');
+  await page.getByLabel('Language').selectOption('vi');
+  await page.getByRole('heading',{name:'Sự rơi tự do',exact:true}).waitFor();
+  console.log('Browser checks passed: sandboxed illustration, motion, playback, grading, highlight, persistence, API configuration and mobile width.');
+}finally{await browser?.close();server.kill()}
+

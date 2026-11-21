@@ -1,0 +1,9 @@
+.venv/
+.npm-cache/
+node_modules/
+dist/
+data/
+__pycache__/
+*.log
+.env
+.test-data*/
