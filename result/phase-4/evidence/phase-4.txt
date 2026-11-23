@@ -1,0 +1,30 @@
+﻿.\.venv\Scripts\python.exe : C:\Users\ADMIN\Documents\ConceptLens\.venv\Lib\site-packages\fastapi\testclient.py:1: 
+StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+At line:2 char:1
++ .\.venv\Scripts\python.exe -m unittest discover -s tests -p test_tuto ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (C:\Users\ADMIN\...ttpx2` instead.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  from starlette.testclient import TestClient as TestClient  # noqa
+test_v1_answer_and_clarification_skip_dispatch 
+(test_tutor_agent.TutorAgent.test_v1_answer_and_clarification_skip_dispatch) ... ok
+test_v2_native_batch_saved_snapshot_and_provider_switch 
+(test_tutor_agent.TutorAgent.test_v2_native_batch_saved_snapshot_and_provider_switch) ... ok
+test_v3_validation_recovery_repeat_and_caps (test_tutor_agent.TutorAgent.test_v3_validation_recovery_repeat_and_caps) 
+... ok
+test_v4_codex_over_budget_search_events_reject_before_dispatch_or_commit 
+(test_tutor_agent.TutorAgent.test_v4_codex_over_budget_search_events_reject_before_dispatch_or_commit) ... ok
+test_v4_search_permission_completion_and_sources 
+(test_tutor_agent.TutorAgent.test_v4_search_permission_completion_and_sources) ... ok
+test_v5_deadline_budget_lease_and_retry (test_tutor_agent.TutorAgent.test_v5_deadline_budget_lease_and_retry) ... ok
+test_v5_summary_and_database_commit_share_deadline 
+(test_tutor_agent.TutorAgent.test_v5_summary_and_database_commit_share_deadline) ... ok
+test_v6_scoped_specialist_and_fallback (test_tutor_agent.TutorAgent.test_v6_scoped_specialist_and_fallback) ... Codex 
+CLI returned invalid Recommendation output: text (string_too_short)
+ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 4.645s
+
+OK

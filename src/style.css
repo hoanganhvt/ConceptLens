@@ -30,6 +30,33 @@
 .memory-item ul{padding-inline-start:22px}
 .memory-item li{margin:6px 0}
 .memory-meta,.memory-item time{color:#536558;font-size:14px}
+
+.ai-loading:not(:empty){
+  display:flex;align-items:center;gap:10px;width:fit-content;
+  margin-block:10px;padding:6px 12px;border-radius:9px;
+  background:#e8f0e4;color:#215440;font-weight:600;
+}
+.ai-loading-icon{
+  display:inline-flex;align-items:center;justify-content:center;gap:3px;
+  flex:0 0 24px;height:20px;
+}
+.ai-loading-icon i{background:currentColor;border-radius:99px}
+.ai-loading-icon.dots i{width:5px;height:5px;animation:ai-bounce 1s ease-in-out infinite}
+.ai-loading-icon.wave i{width:4px;height:14px;animation:ai-wave 1s ease-in-out infinite}
+.ai-loading-icon.dots i:nth-child(2),.ai-loading-icon.wave i:nth-child(2){animation-delay:.12s}
+.ai-loading-icon.dots i:nth-child(3),.ai-loading-icon.wave i:nth-child(3){animation-delay:.24s}
+.ai-loading-icon.orbit{position:relative;flex-basis:20px;margin-inline:2px;animation:ai-orbit 1.7s linear infinite}
+.ai-loading-icon.orbit::before{content:"";position:absolute;inset:1px;border:1px solid currentColor;border-radius:50%;opacity:.4}
+.ai-loading-icon.orbit i:first-child{width:6px;height:6px}
+.ai-loading-icon.orbit i:nth-child(2){position:absolute;top:0;left:3px;width:5px;height:5px}
+.ai-loading-icon.orbit i:nth-child(3){position:absolute;bottom:1px;right:2px;width:4px;height:4px;background:#8a611b}
+
+@keyframes ai-bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+@keyframes ai-wave{0%,60%,100%{transform:scaleY(.4)}30%{transform:scaleY(1)}}
+@keyframes ai-orbit{to{transform:rotate(1turn)}}
+@media(prefers-reduced-motion:reduce){
+  .ai-loading-icon.orbit,.ai-loading-icon.dots i,.ai-loading-icon.wave i{animation:none}
+}
 @media(min-width:1121px){
   .reader-spread:has(.tutor-panel:not([hidden])){display:grid;grid-template-columns:minmax(0,1fr) clamp(330px,28vw,410px);align-items:start}
   .tutor-panel{position:sticky;top:0;height:calc(100dvh - 74px);min-height:min(420px,100dvh)}

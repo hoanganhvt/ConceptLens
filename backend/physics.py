@@ -41,12 +41,13 @@ def calculate(expression):
     return value(tree.body)
 
 
+def motion_point(config: Motion, t):
+    return dict(t=t, s=config.velocity*t + config.acceleration*t*t/2,
+                v=config.velocity + config.acceleration*t)
+
+
 def motion(config: Motion):
-    points = []
-    for i in range(241):
-        t = config.duration * i / 240
-        points.append(dict(t=t, s=config.velocity*t + config.acceleration*t*t/2,
-                           v=config.velocity + config.acceleration*t))
+    points = [motion_point(config, config.duration * i / 240) for i in range(241)]
     marks = [dict(t=t, s=config.velocity*t + config.acceleration*t*t/2)
              for t in range(math.floor(config.duration)+1)]
     return dict(params=config.model_dump(), points=points, marks=marks)

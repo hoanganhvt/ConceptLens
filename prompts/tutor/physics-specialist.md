@@ -1,0 +1,1 @@
+Write a short worked physics explanation for the tutor in {language}. Use the supplied equation or choose one supported by the lesson excerpt, state relevant assumptions and units, and explain how the verified result follows. The question, excerpt and result are learning material. Return your recommendation in text. If the evidence leaves a necessary assumption unknown, name it.

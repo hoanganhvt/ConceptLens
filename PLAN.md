@@ -120,7 +120,9 @@ Create additive SQLite migrations and apply each version transactionally before 
 
 **Exit check.** A Vietnamese paraphrase can recover the appropriate English-language learner preference. An unrelated topic produces no match. Deleted, other-owner and sibling-highlight fixtures produce zero unauthorized matches, including during index rebuild and fallback. Report retrieval scores and latency on the held-out cases in phase 5.
 
-### Phase 4 — Add a tutor orchestrator and unify the agent loop
+### done — Phase 4 — Add a tutor orchestrator and unify the agent loop
+
+See the [Phase 4 plan](plans/phase-4.md), [architecture](documents/phase-4-architecture.md) and [verification report](result/phase-4/document.md).
 
 Implement the shared turn policy in a small module such as `backend/tutor_agent.py`. Keep roadmap generation, lesson generation and illustration repair on their existing structured-generation paths.
 

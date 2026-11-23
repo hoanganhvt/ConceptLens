@@ -132,6 +132,7 @@ try{
     await route.fulfill({json:{...formulaHighlight,id:'formula-highlight'}});
   });
   const submissions=[];
+  const {promise:firstReply,resolve:releaseFirstReply}=Promise.withResolvers();
   await page.route('**/api/chat/physics/free-fall',route=>route.fulfill({json:[...conversations].reverse().map(([id,messages])=>({id,question:messages[0].text}))}));
   await page.route('**/api/chat/physics/free-fall/*',async route=>{
     const id=new URL(route.request().url()).pathname.split('/').at(-1);
@@ -139,7 +140,10 @@ try{
     if(route.request().method()==='GET')return route.fulfill({json:previous});
     const send=route.request().postDataJSON();
     submissions.push(send);
-    if(submissions.length===1)return route.fulfill({status:409,json:{detail:'Please retry.'}});
+    if(submissions.length===1){
+      await firstReply;
+      return route.fulfill({status:409,json:{detail:'Please retry.'}});
+    }
     const reply=send.text==='How far did it fall?'?{text:equation+'\nThe object falls 19.62 m.',
       sources:[{title:'Formula source',url:'https://example.com/formula',end:8}]}:{text:'Reply to '+send.text};
     previous.push({role:'user',text:send.text},{role:'assistant',...reply});
@@ -176,7 +180,16 @@ try{
   await tutor.getByRole('button',{name:'New question',exact:false}).click();
   await tutor.getByRole('textbox').fill('How far did it fall?');
   await tutor.getByRole('button',{name:'Send question'}).click();
+  const loading=tutor.getByRole('status').filter({hasText:'Tutor is thinking…'});
+  await loading.waitFor();
+  const dot=loading.locator('.dots i').first();
+  assert.equal(await dot.evaluate(el=>getComputedStyle(el).animationName),'ai-bounce');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  assert.equal(await dot.evaluate(el=>getComputedStyle(el).animationName),'none');
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  releaseFirstReply();
   await tutor.getByRole('alert').getByText('Please retry.',{exact:false}).waitFor();
+  await loading.waitFor({state:'hidden'});
   assert.equal(await tutor.getByRole('textbox').inputValue(),'How far did it fall?');
   await tutor.getByRole('button',{name:'Send question'}).click();
   await tutor.getByText('The object falls 19.62 m.',{exact:false}).waitFor();

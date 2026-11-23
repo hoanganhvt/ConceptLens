@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import sqlite3
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from pathlib import Path
 from threading import Lock
 from typing import Literal
@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, StrictBool
 from urllib.parse import urlsplit
-from . import ai, chat_state, learner_memory, memory_retrieval, providers, tutor_context
+from . import ai, chat_state, learner_memory, memory_retrieval, providers, tutor_agent, tutor_context
 from .embedding_process import EncoderProcess
 from .prompt_files import prompt
 from .demo import ROAD, SAMPLE, ROAD_EN, SAMPLE_EN
@@ -487,10 +487,18 @@ def read_chat(rid:str,tid:str,branch:str):
 
 @app.post("/api/chat/{rid}/{tid}/{branch}")
 def send(rid:str,tid:str,branch:str,body:Message):
+    agent = tutor_agent.Turn() if os.getenv("STUDY_TUTOR_AGENT") == "1" else nullcontext()
+    with agent as turn:
+        return send_turn(rid, tid, branch, body, turn)
+
+
+def send_turn(rid, tid, branch, body, turn):
     key, doc, topic, note = thread(rid, tid, branch)
     reservation = chat_state.Send(db, key, body.request_id, body.text, body.search)
     history, replay = reservation.reserve()
     if replay:
+        if turn:
+            turn.reason = "replay"
         return history
     try:
         settings = ai_settings()
@@ -512,11 +520,20 @@ def send(rid:str,tid:str,branch:str,body:Message):
                 {k: x[k] for k in ("title", "instruction", "explanation")} for x in doc["illustrations"]])
             if note:
                 ctx["highlight"] = note
-        reply = ai.chat(ctx, model_history, body.text, body.search, settings=settings, working=working, renew=reservation.renew)
+                if turn and note["version"] == doc["version"]:
+                    values = tutor_context.finite_values(note.get("snapshot") or {}, tutor_context.MOTION_UNITS)
+                    if values:
+                        ctx["simulation"] = {"source": "highlight", "values": values,
+                                             "units": {key: tutor_context.MOTION_UNITS[key] for key in values}}
+        chat = tutor_agent.chat if turn else ai.chat
+        options = {"turn": turn} if turn else {}
+        reply = chat(ctx, model_history, body.text, body.search, settings=settings, working=working,
+                     renew=reservation.renew, **options)
         if working and working.sent:
             reply["memory_refs"] = working.sent
+        commit = {"pre_commit": turn.remaining} if turn else {}
         result = reservation.commit(dict(role="user", text=body.text), reply, working.pending if working else None,
-                                    verify=working.verify if working and working.sent else None)
+                                    verify=working.verify if working and working.sent else None, **commit)
     except BaseException:
         reservation.release()
         raise

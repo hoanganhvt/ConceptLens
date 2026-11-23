@@ -1,0 +1,1522 @@
+[
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.206,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 21.192,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.362,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 17.738,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.149,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.487,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.399,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.826,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 23.718,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 22.591,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 23.186,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 23.157,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 23.961,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 25.292,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 26.031,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 22.241,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 24.129,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 27.534,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 22.44,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 26.841,
+    "request_bytes": [
+      2922
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.016,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 28.38,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.057,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.384,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.286,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.583,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 29.761,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 28.725,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.798,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 27.257,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.896,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 29.641,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 27.745,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.975,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 26.852,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.99,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 27.999,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 28.379,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 28.591,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 26.145,
+    "request_bytes": [
+      2927,
+      3160
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.032,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.936,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 21.391,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.217,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 19.2,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 19.007,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.032,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.218,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.51,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.701,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.672,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 20.679,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.266,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.369,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 19.693,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.098,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 19.433,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 19.626,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 17.625,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 18.325,
+    "request_bytes": [
+      4328
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 24.336,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 23.973,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 24.113,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 24.542,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 25.579,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 24.798,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 24.818,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 26.07,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 26.624,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 28.147,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 25.564,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 25.996,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 28.661,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 30.969,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 25.117,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 26.87,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 26.929,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 26.232,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 24.961,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "openai",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 26.725,
+    "request_bytes": [
+      4333,
+      4708
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 20.916,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 21.285,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 20.076,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.636,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.981,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.561,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 20.457,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.342,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 22.571,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 20.631,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.216,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.595,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.896,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.784,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 21.394,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.442,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.519,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.858,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 18.877,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "answer",
+    "elapsed_ms": 19.457,
+    "request_bytes": [
+      3972
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.146,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.367,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.297,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 32.52,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.535,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 25.836,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.732,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.86,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.484,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.083,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 26.188,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.763,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 24.651,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 30.459,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 30.818,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 32.236,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 28.737,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 26.415,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 33.5,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": false,
+    "case": "calculation",
+    "elapsed_ms": 33.891,
+    "request_bytes": [
+      3977,
+      4045
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 25.651,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 27.059,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 27.92,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 33.139,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 32.564,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 36.451,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 38.004,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 34.067,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 25.947,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 31.593,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 38.502,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 27.376,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 22.846,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 24.965,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 24.389,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 29.027,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 25.182,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 24.452,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 24.549,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "answer",
+    "elapsed_ms": 23.64,
+    "request_bytes": [
+      5441
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 30.873,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 27.199,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 30.558,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 28.98,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 29.382,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 29.234,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 29.268,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 31.357,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 31.869,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 31.501,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 33.982,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 36.778,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 31.076,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 32.566,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 33.948,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 33.308,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 39.219,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 38.579,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 39.797,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  },
+  {
+    "provider": "codex",
+    "phase4": true,
+    "case": "calculation",
+    "elapsed_ms": 37.432,
+    "request_bytes": [
+      5446,
+      5621
+    ]
+  }
+]

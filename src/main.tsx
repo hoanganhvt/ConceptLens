@@ -2,6 +2,7 @@ import {tr, language} from './language';
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Lab} from './Lab';
+import {AiLoading} from './AiLoading';
 import {MemoriesUsed,MemorySettings} from './MemorySettings';
 import {formulas,renderMath,sourceText} from './math';
 import {api,type Road,type Bundle,type Topic,type Anchor,type Msg,type Progress,type MemoryRef} from './types';
@@ -20,12 +21,13 @@ function Dialog({title,children,close}:{title:string,children:React.ReactNode,cl
 }
 
 function Planner({base,done,close}:{base:Road|null,done:(r:Road)=>void,close:()=>void}){
-  const [draft,setDraft]=useState<Road|null>(base),[busy,setBusy]=useState(false),[err,setErr]=useState('');
+  const [draft,setDraft]=useState<Road|null>(base),[busy,setBusy]=useState<'draft'|'save'|null>(null),[err,setErr]=useState('');
   const [values,setValues]=useState({subject:base?.title||tr("Vật lý", "Physics"),goal:base?.goal||'',level:tr("Mới bắt đầu", "Beginner"),schedule:tr("30 phút mỗi ngày", "30 minutes a day"),revision:''});
-  async function generate(e:React.FormEvent){e.preventDefault();setBusy(true);setErr('');try{setDraft(await api<Road>('drafts',{...values,previous:draft}))}catch(e){setErr(String(e))}finally{setBusy(false)}}
+  async function generate(e:React.FormEvent){e.preventDefault();setBusy('draft');setErr('');try{setDraft(await api<Road>('drafts',{...values,previous:draft}))}catch(e){setErr(String(e))}finally{setBusy(null)}}
   return <Dialog title={base?tr("Phiên bản lộ trình mới", "New roadmap version"):tr("Tạo lộ trình", "Create roadmap")} close={close}><form onSubmit={generate}>{(['subject','goal','level','schedule'] as const).map((k,i)=><label key={k}>{[tr("Chủ đề", "Subject"),tr("Mục tiêu học", "Learning goal"),tr("Trình độ hiện tại", "Current level"),tr("Thời gian học", "Study time")][i]}<input required value={values[k]} onChange={e=>setValues({...values,[k]:e.target.value})}/></label>)}
   {draft&&<><h3>{draft.title}</h3>{draft.chapters.map((c,i)=><section key={i}><b>{c.title}</b><ol>{c.topics.map((t,j)=><li key={j}>{t.title} — {t.goal}</li>)}</ol></section>)}<label>{tr("Điều bạn muốn chỉnh", "What would you like to change?")}<input value={values.revision} onChange={e=>setValues({...values,revision:e.target.value})}/></label></>}
-  <div className="actions"><button disabled={busy}>{busy?tr("Đang xử lý…", "Preparing draft…"):draft?tr("Chỉnh bản nháp", "Revise draft"):tr("Tạo bản nháp", "Create draft")}</button>{draft&&<button type="button" className="primary" disabled={busy} onClick={async()=>{setBusy(true);setErr('');try{done(await api<Road>('roads',draft))}catch(e){setErr(String(e));setBusy(false)}}}>{tr("Chốt lộ trình", "Confirm roadmap")}</button>}</div>{err&&<p role="alert">{err}</p>}</form></Dialog>
+  <div className="actions"><button disabled={!!busy}>{draft?tr("Chỉnh bản nháp", "Revise draft"):tr("Tạo bản nháp", "Create draft")}</button>{draft&&<button type="button" className="primary" disabled={!!busy} onClick={async()=>{setBusy('save');setErr('');try{done(await api<Road>('roads',draft))}catch(e){setErr(String(e));setBusy(null)}}}>{tr("Chốt lộ trình", "Confirm roadmap")}</button>}</div>
+  <AiLoading active={busy==='draft'} variant="orbit">{tr("AI đang soạn bản nháp…", "AI is preparing your draft…")}</AiLoading>{err&&<p role="alert">{err}</p>}</form></Dialog>
 }
 
 function Cited({msg}:{msg:Msg}){
@@ -71,7 +73,8 @@ function Chat({path,onSaved,memoryEpoch,openMemory}:{path:string,onSaved:(histor
   return <><div ref={messages} className="history" aria-live="polite">{history.map((m,i)=><div className={'msg '+m.role} key={i}><b>{m.role==='user'?tr("Bạn", "You"):tr("Gia sư", "Tutor")}</b><p><Cited msg={m}/></p>{!!m.traces?.length&&<details><summary>{tr("Phép kiểm chứng Python", "Python calculations")}</summary><pre>{JSON.stringify(m.traces,null,2)}</pre></details>}
     {!!m.memory_refs?.length&&<MemoriesUsed references={m.memory_refs} epoch={memoryEpoch} manage={openMemory}/>}</div>)}</div>
   <form onSubmit={submit}>
-  <label>{tr("Câu hỏi của bạn", "Your question")}<textarea required disabled={busy} value={text} onChange={e=>setText(e.target.value)} placeholder={tr("Bạn muốn hiểu rõ điều gì?", "What would you like to understand?")}/></label><div className="actions"><label className="inline"><input type="checkbox" disabled={busy} checked={search} onChange={e=>setSearch(e.target.checked)}/>{tr("Tra cứu web", "Search the web")}</label><button className="primary" disabled={!loaded||busy}>{busy?tr("Đang trả lời…", "Thinking…"):tr("Gửi câu hỏi", "Send question")}</button></div>{err&&<p role="alert">{err}</p>}</form></>
+  <label>{tr("Câu hỏi của bạn", "Your question")}<textarea required disabled={busy} value={text} onChange={e=>setText(e.target.value)} placeholder={tr("Bạn muốn hiểu rõ điều gì?", "What would you like to understand?")}/></label><div className="actions"><label className="inline"><input type="checkbox" disabled={busy} checked={search} onChange={e=>setSearch(e.target.checked)}/>{tr("Tra cứu web", "Search the web")}</label><button className="primary" disabled={!loaded||busy}>{tr("Gửi câu hỏi", "Send question")}</button></div>
+  <AiLoading active={busy} variant="dots">{tr("Gia sư đang suy nghĩ…", "Tutor is thinking…")}</AiLoading>{err&&<p role="alert">{err}</p>}</form></>
 }
 
 function newThread(){return 'question-'+crypto.randomUUID().replaceAll('-','')}
@@ -191,7 +194,8 @@ function Reader({road,topic,memoryEpoch,openMemory}:{road:Road,topic:Topic}&Memo
   }
   return <div className="reader-spread"><article key={path}><div className="crumb">{road.title} <span>/</span> {road.chapters.find(c=>c.topics.some(t=>t.id===topic.id))?.title}</div><h1>{topic.title}</h1>
   {err&&<p role="alert">{err}</p>}{!bundle&&!err&&<p>{tr("Đang mở bài…", "Opening lesson…")}</p>}
-  {bundle&&!doc&&<><p>{topic.goal}</p><button className="primary" disabled={busy} onClick={async()=>{setBusy(true);setErr('');try{await api('lesson/'+path,{});const next=await api<Bundle>('lesson/'+path);if(live.current)setBundle(next)}catch(e){setErr(String(e))}finally{setBusy(false)}}}>{busy?tr("Gia sư đang soạn bài…", "Preparing your lesson…"):tr("Học bài này", "Start lesson")}</button></>}
+  {bundle&&!doc&&<><p>{topic.goal}</p><button className="primary" disabled={busy} onClick={async()=>{setBusy(true);setErr('');try{await api('lesson/'+path,{});const next=await api<Bundle>('lesson/'+path);if(live.current)setBundle(next)}catch(e){setErr(String(e))}finally{setBusy(false)}}}>{tr("Học bài này", "Start lesson")}</button>
+  <AiLoading active={busy} variant="wave">{tr("Gia sư đang soạn bài…", "Preparing your lesson…")}</AiLoading></>}
   {doc&&bundle&&<><div className="intro">{annotated('intro',doc.intro)}</div><nav className="tabs"><a href="#lesson">{tr("Bài giảng", "Lesson")}</a><a href="#quiz">Quiz</a><button type="button" ref={tutorButton} aria-controls="tutor" aria-expanded={tutorOpen} onClick={()=>tutorOpen?closeTutor():setTutorOpen(true)}>{tr("Hỏi gia sư", "Ask the tutor")}</button></nav>
   <div id="lesson">{doc.sections.map((s,i)=><section key={i}><h2>{renderMath(s.title)}</h2>{annotated('s'+i,s.text)}
     {doc.illustrations.map((v,j)=>v.section===i?<Lab key={j} item={v} index={j} path={path} annotate={annotated} onSnapshot={state=>{snapshots.current[j]=state}}/>:null)}</section>)}</div>

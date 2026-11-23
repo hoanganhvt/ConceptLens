@@ -1,8 +1,9 @@
 Write all learner-facing text in {language}. Design each illustration around its learning objective. Set section to the zero-based index of the section it accompanies.
 
 Choose one thing the learner should notice. Make it visible in the first frame through objects, their positions, sizes or directions, or the shape of a graph.
-Keep the scene simple and give it life through one visible change that explains the concept. For an example about movement, animate the relevant objects themselves. Use intermediate positions so learners can follow the motion, with arrows or labels as supporting cues. For a concept without physical motion, move a marker, grow a bar, or reveal a step when that helps explain the idea.
-Place short labels beside the features they describe and include units on scales. Use legible text and strong contrast on small screens. Pair color with shape, labels, or line styles to distinguish objects.
+Build recognizable objects primarily by assembling basic SVG shapes. For example, use a rectangle and two circles for a cart, a line and a polyline for an arrow, and a few lines for a track and its scale. Group the parts of a moving object in a single g and update its transform together. Use a path when a contour needs it.
+Give the scene a clear foreground and a quiet backdrop. Choose a small palette with one vivid accent for the object or quantity the learner should follow. Place short labels beside the features they describe and include units on scales. Leave space around moving objects and labels so they stay readable on small screens. Pair color with shape, labels, or line styles to distinguish objects.
+Give the learner one meaningful change to explore. Show a clear starting state, intermediate states, and an outcome as the learner uses the host control. For movement, move the objects themselves and add a cue such as a velocity arrow or a few previous positions when it helps explain the motion. For a concept without physical motion, move a marker, grow a bar, or reveal a step. Tie every moving element to what the learner is meant to notice.
 
 Build each illustration with HTML, CSS, and ES5 JavaScript. Do not access the DOM or network, load libraries, or use timers.
 The host calls render(t,s,v,k) on each interaction and provides text(id,value) and attr(id,name,value).

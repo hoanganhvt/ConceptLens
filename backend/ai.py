@@ -1,3 +1,4 @@
+from contextlib import nullcontext
 from .language import tr
 import json
 import os
@@ -144,18 +145,24 @@ def codex_chat(context, history, question, search, model, working=None, renew=No
     raise HTTPException(502,tr("Đã đạt giới hạn lượt gọi công cụ. Hãy thu hẹp câu hỏi.", "The tool call limit was reached. Try a more specific question."))
 
 
-def openai_call(api, request, budget, renew, kind="tutor", *, pre_send=None):
+def openai_call(api, request, budget, renew, kind="tutor", *, pre_send=None, remaining=None):
     if renew:
         renew()
-    if budget is None:
+    if budget is None and remaining is None:
         return api.responses.create(**request)
-    with budget.measure(json_bytes(request), kind) as usage:
+    measurement = budget.measure(json_bytes(request), kind) if budget else nullcontext({})
+    with measurement as usage:
         if pre_send:
-            api = api.with_options(max_retries=0)
+            if remaining is None:
+                api = api.with_options(max_retries=0)
             pre_send()
+        if remaining:
+            api = api.with_options(timeout=remaining(), max_retries=0)
         result = api.responses.create(**request)
-        if result.usage:
-            usage.update(input_tokens=result.usage.input_tokens, output_tokens=result.usage.output_tokens)
+        if remaining:
+            remaining()
+        if reported := getattr(result, "usage", None):
+            usage.update(input_tokens=reported.input_tokens, output_tokens=reported.output_tokens)
         return result
 
 

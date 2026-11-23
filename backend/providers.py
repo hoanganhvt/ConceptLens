@@ -72,11 +72,11 @@ def cli_environment():
     return {k:v for k,v in os.environ.items() if k.upper() not in {"OPENAI_API_KEY","CODEX_API_KEY"}}
 
 
-def cli_status(executable):
+def cli_status(executable, *, timeout=8):
     if not executable:
         return "missing"
     try:
-        result = subprocess.run([executable, "login", "status"], capture_output=True, timeout=8,
+        result = subprocess.run([executable, "login", "status"], capture_output=True, timeout=timeout,
                                 env=cli_environment(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         if result.returncode == 0:
             return "ready"
@@ -130,24 +130,29 @@ def codex_overhead(schema, instructions):
 def validation_issues(error):
     issues = error.errors(include_url=False, include_context=False, include_input=False)
     return ", ".join(
-        f"{'.'.join(map(str, issue['loc'])) or 'root'} ({issue['type']})" for issue in issues[:5]
+        f"{'.'.join(map(str, issue['loc'])) or 'root'} ({issue['type']}): {issue['msg']}"
+        for issue in issues[:5]
     )
 
 
 def codex_result(schema, instructions, context, search=False, *, model=None, budget=None, renew=None, kind="tutor",
-                 pre_send=None):
+                 pre_send=None, remaining=None, search_events=None):
     schema_text, prompt_text = codex_request(schema, instructions, context)
     size = len(schema_text.encode()) + len(prompt_text.encode())
     measurement = budget.measure(size, kind) if budget else nullcontext({})
     with measurement as usage:
         if renew:
             renew()
-        return run_codex(schema, schema_text, prompt_text, search, model, usage, pre_send=pre_send)
+        options = {"remaining": remaining} if remaining else {}
+        if search_events is not None:
+            options["search_events"] = search_events
+        return run_codex(schema, schema_text, prompt_text, search, model, usage, pre_send=pre_send, **options)
 
 
-def run_codex(schema, schema_text, prompt_text, search, model, usage, *, pre_send=None):
+def run_codex(schema, schema_text, prompt_text, search, model, usage, *, pre_send=None, remaining=None,
+              search_events=None):
     exe = shutil.which("codex")
-    status = cli_status(exe)
+    status = cli_status(exe, timeout=min(8, remaining())) if remaining else cli_status(exe)
     if status == "missing":
         raise HTTPException(503, tr("Chưa tìm thấy Codex CLI trong PATH của máy chủ.", "Codex CLI was not found on the server PATH."))
     if status == "logged_out":
@@ -165,12 +170,14 @@ def run_codex(schema, schema_text, prompt_text, search, model, usage, *, pre_sen
             if pre_send:
                 pre_send()
             result = subprocess.run(args,input=prompt_text,encoding="utf-8",errors="replace",capture_output=True,
-                                    timeout=180,cwd=folder,env=cli_environment(),
+                                    timeout=remaining() if remaining else 180,cwd=folder,env=cli_environment(),
                                     creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))
         except subprocess.TimeoutExpired:
             raise HTTPException(504,tr("Codex CLI trả lời quá chậm. Hãy thử lại.", "Codex CLI timed out. Please try again."))
         except OSError:
             raise HTTPException(503,tr("Không khởi chạy được Codex CLI.", "Could not start Codex CLI."))
+        if remaining:
+            remaining()
         if result.returncode:
             log.warning("Codex CLI failed for %s with exit code %d", schema.__name__, result.returncode)
             raise HTTPException(502,tr("Codex CLI gặp lỗi. Kiểm tra đăng nhập, phiên bản CLI và hạn mức rồi thử lại.", "Codex CLI failed. Check your sign-in, CLI version, and quota, then try again."))
@@ -182,11 +189,20 @@ def run_codex(schema, schema_text, prompt_text, search, model, usage, *, pre_sen
                     usage.update({key: value for key, value in reported.items()
                                   if key in ("input_tokens", "output_tokens") and type(value) is int})
             items = [event["item"] for event in events if event.get("type")=="item.completed"]
-            if search and not any(item["type"]=="web_search" for item in items):
+            searches = [item for item in items if item["type"] == "web_search"]
+            completed_searches = sum(item.get("status", "completed") == "completed" for item in searches)
+            if search_events is not None:
+                search_events["completed"] = completed_searches
+                observed_search = any((event.get("item") or {}).get("type") == "web_search" for event in events)
+                verified = bool(completed_searches) and completed_searches == len(searches)
+                search_mismatch = not verified if search else observed_search
+            else:
+                search_mismatch = search and not searches
+            if search_mismatch:
                 raise HTTPException(502,tr("Codex chưa tra cứu được web. Hãy thử lại.", "Codex could not search the web. Please try again."))
             message = next(item["text"] for item in reversed(items) if item["type"]=="agent_message")
             return schema.model_validate_json(message).model_dump()
-        except (ValueError, KeyError, StopIteration) as exc:
+        except (ValueError, KeyError, StopIteration, TypeError, AttributeError) as exc:
             detail = validation_issues(exc) if isinstance(exc, ValidationError) else type(exc).__name__
             log.warning("Codex CLI returned invalid %s output: %s", schema.__name__, detail)
             raise HTTPException(502,tr("Codex CLI chưa trả về nội dung hợp lệ. Hãy thử lại.", "Codex CLI returned invalid content. Please try again.")) from exc

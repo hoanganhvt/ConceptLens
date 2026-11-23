@@ -74,7 +74,9 @@ class Study(unittest.TestCase):
             self.assertEqual(app.generate(rid, tid), doc)
         self.assertEqual(run.call_count, 2)
         self.assertIn("quiz.0 (value_error)", run.call_args.kwargs["input"])
+        self.assertIn("Hãy nhập một số và đơn vị phù hợp.", run.call_args.kwargs["input"])
         self.assertIn("quiz.0 (value_error)", logs.output[0])
+        self.assertNotIn("p = -6 kg", logs.output[0])
         self.assertTrue(grade(doc["quiz"][0], "-6 kg⋅m/s"))
 
     def test_course_and_conversations(self):

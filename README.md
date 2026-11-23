@@ -18,13 +18,22 @@ Open [ConceptLens on localhost](http://127.0.0.1:8765/). The first run installs 
 
 The built-in Free fall lesson works before you configure a provider. Set its time slider to **2 s**. With the default acceleration and initial velocity, the marble falls **19.62 m**. Enter `1962 cm` in the quiz to try grading with equivalent units.
 
-## What you can do
+## Verified features
 
-- **Plan a course.** Draft a roadmap from a subject, learning goal, level, and schedule. Review and revise the draft before confirming it. Create a new version when you want to revise a confirmed roadmap.
-- **Explore illustrated lessons.** Generate and reopen lessons with worked examples, interactive visuals, and quizzes. The lesson prompt asks for at least two illustrated examples per concept. Move through an event with a slider, or use the motion lab's playback, initial conditions, and position and velocity graphs. Lesson, quiz, and tutor formulas render as LaTeX.
-- **Ask the tutor.** Open the collapsible panel on the right. Each new question starts a thread, and the current lesson's saved questions reopen with their full conversations. Select a passage or illustration caption to create a separate highlight thread. A simulation highlight keeps the values shown when you selected it. The tutor is prompted to give a short, direct answer in plain words. It can run Python calculations and simulations, and return source links for web lookups.
-- **Check your understanding.** Answer choice questions or submit a number with units. Grading and feedback work locally, and the app saves quiz attempts, reading position, and motion settings.
-- **Manage learner memory.** In **Settings → Learner memory**, select **Enable learner memory** to save goals and preferences and track recurring unit mistakes. Two distinct quiz questions in the same roadmap must support the same unit diagnosis before it becomes recurring. You can inspect the original answers, edit or forget a memory, and turn the setting off to pause capture and tutor use. Saved memories remain available for review, and forgetting a memory preserves the original quiz and chat history.
+The checks below use automated backend tests, browser tests, and scripted OpenAI and Codex responses. Live-provider answer quality and latency remain unmeasured in these reports.
+
+| Feature | What the tests confirmed | Evidence |
+| --- | --- | --- |
+| **Roadmaps and lesson generation** | Draft and confirm a course, generate a lesson from a scripted response, and reopen the saved lesson. Invalid Codex lesson output triggers a retry. | [Backend tests](result/phase-3/evidence/verification-unit.txt) |
+| **Interactive lessons and local grading** | The free-fall slider shows **19.62 m** at **2 s** with default settings. Playback and changes to initial conditions update the simulation. The quiz accepts `1962 cm`, rejects `19.62 s`, and keeps saved feedback after reload. Browser checks also covered LaTeX rendering and the illustration repair interface. | [Baseline replay](result/phase-0.md) · [Browser tests](result/phase-3/evidence/verification-browser.txt) |
+| **Tutor threads and provider switching** | Reopen saved conversations, keep main and highlight threads separate, and retain the simulation values captured at selection. Scripted requests exercised calculations, source links, and switching between OpenAI and Codex within a thread. | [Baseline replay](result/phase-0.md) · [Browser tests](result/phase-3/evidence/verification-browser.txt) |
+| **Provider settings** | The Codex provider and model selection survive a reload. On Windows, the settings API reports whether an OpenAI key is saved without returning the key. | [Browser checks](tests/browser.mjs) · [Test results](result/phase-3/evidence/verification-browser.txt) |
+| **Bounded tutor context** | Long conversations stay within the configured request budget while retaining the original 19.62 m result and the full transcript in the reader. Retries preserve the draft and avoid duplicate replies. | [Phase 1 verification](result/phase-1.md) |
+| **Local learner memory** | In **Settings → Learner memory**, save goals and preferences or track unit mistakes. Two distinct quiz questions in the same roadmap must support the same diagnosis before it becomes recurring. English and Vietnamese browser checks covered opting in, pausing, opening the original quiz answer, editing, and forgetting while preserving study history. | [Phase 2 verification](result/phase-2.md) |
+| **Memory retrieval in the tutor** | Functional tests covered filtering by scope and revision, sending references through both adapters, and opening the exact supporting quiz attempt from **Memories used**. Editing or forgetting makes old references unavailable. | [Phase 3 verification](result/phase-3/document.md) |
+| **Study-data migration and restore** | Upgrading and reopening populated databases preserved progress, roadmaps, chat, and summaries. A restored copy retained study history, and an injected migration failure rolled back. | [Phase 2 verification](result/phase-2.md) · [Phase 3 verification](result/phase-3/document.md) |
+
+**Encoder release status.** No tested encoder met the recall threshold, and end-to-end latency and memory use are still unverified on the target two-core Windows machine with 4 GB RAM. The standard installation falls back to lesson and conversation context. Local learner memory works independently of the encoder. [Phase 3 benchmark](result/phase-3/benchmark.md)
 
 ## AI providers
 
@@ -41,7 +50,7 @@ To enable bounded tutor context, set `STUDY_BOUNDED_CONTEXT=1` before launching.
 
 Learner memory is off by default. Once enabled in Settings, quiz evidence is processed locally without provider calls. [Learner memory architecture](documents/phase-2-architecture.md)
 
-Tutor retrieval also requires bounded context and an approved local encoder package configured through `STUDY_EMBEDDING_MODEL_DIR` before launch. Settings shows whether the encoder is ready. The current benchmark qualified no encoder, so a standard installation uses lesson and conversation context for tutor replies. You can still capture and manage learner memories. [Retrieval architecture](documents/phase-3-architecture.md) · [Verification](result/phase-3/document.md) · [Benchmark](result/phase-3/benchmark.md)
+Tutor retrieval requires bounded context and an approved local encoder package configured through `STUDY_EMBEDDING_MODEL_DIR` before launch. Settings shows encoder readiness. [Retrieval architecture](documents/phase-3-architecture.md)
 
 When retrieval is ready, ConceptLens ranks memories locally and may send up to three relevant memory statements and source details to the selected AI provider. Expand **Memories used** below a tutor reply to open the referenced memory and any supporting quiz attempts. After you edit or forget a memory, the old reference is shown as unavailable.
 
@@ -70,6 +79,6 @@ npm.cmd run test:ui
 .\.venv\Scripts\python.exe tests/evals/runner.py --bounded --output "$env:TEMP\conceptlens-evals"
 ~~~
 
-The browser test uses an isolated study-data directory and requires Chrome or Chromium. Set `CHROME_PATH` if the browser is installed in a custom location. The replay commands use scripted providers and run without credentials. [Baseline verification](result/phase-0.md)
+The browser test uses an isolated study-data directory and requires Chrome or Chromium. Set `CHROME_PATH` if the browser is installed in a custom location. The replay commands use scripted providers and run without credentials.
 
 Rebuild after frontend changes and restart the server after backend changes. If port 8765 is occupied, check whether ConceptLens is already running there.

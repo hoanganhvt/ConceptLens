@@ -1,4 +1,5 @@
 import {tr, language} from './language';
+import {AiLoading} from './AiLoading';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import type {ReactNode} from 'react';
 import interpreter from 'js-interpreter/lib/js-interpreter.min.js?raw';
@@ -73,7 +74,8 @@ export function Lab({item,index,path,annotate,onSnapshot}:{item:Visual,index:num
     {(sim||!isMotion)&&!failure&&<div className={'stage '+(isMotion?'':'full')} style={{visibility:ready?'visible':'hidden'}}>
       <iframe key={visual.js+visual.html+visual.css} title={visual.title} ref={frame} sandbox="allow-scripts" srcDoc={page} onLoad={()=>frame.current?.contentWindow?.postMessage({type:'init',item:visual,values:last.current,testValues:isMotion&&sim?[sim.points[120].t,sim.points[120].s,sim.points[120].v,50]:[0,0,0,75]},'*')}/>
       {sim&&isMotion&&<><Plot sim={sim} index={pos}/><Ruler sim={sim} index={pos}/></>}</div>}
-    {failure?<div role="status">{busy?tr("Đang sửa minh họa…", "Repairing illustration…"):failure} <button disabled={busy} onClick={()=>repair(failure,true)}>{tr("Tạo lại minh họa", "Regenerate illustration")}</button></div>:
+    <AiLoading active={busy&&!!failure} variant="orbit">{tr("Đang sửa minh họa…", "Repairing illustration…")}</AiLoading>
+    {failure?<div>{!busy&&<span role="status">{failure} </span>}<button disabled={busy} onClick={()=>repair(failure,true)}>{tr("Tạo lại minh họa", "Regenerate illustration")}</button></div>:
     <><div className="controls">{isMotion&&<button aria-label={play?tr("Dừng", "Pause"):tr("Phát", "Play")} disabled={!ready||busy} onClick={()=>{if(pos===240)setPos(0);setPlay(!play)}}>{play?'Ⅱ':'▶'}</button>}
       <label>{isMotion?tr("Thời gian", "Time"):tr("Tham số", "Parameter")}<input aria-label={isMotion?tr("Thời gian", "Time"):tr("Tham số", "Parameter")} type="range" min="0" max={isMotion?240:100} value={pos} disabled={!ready||busy} onChange={e=>{setPlay(false);setPos(+e.target.value)}}/></label>
       <output>{isMotion?fmt(point?.t??0)+' s':pos+'%'}</output></div>

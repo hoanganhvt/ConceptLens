@@ -1,0 +1,52 @@
+﻿{
+    "base_revision":  "043b026a6bce64431d53765846989c64c837e634",
+    "source_state":  "Base revision plus working-tree files identified by their SHA-256 digests",
+    "source_sha256":  {
+                          "backend/ai.py":  "7738bc5fa1c5cb9b646253ced52194d50eb7c942ffbdff68b937fc46a4fbbf27",
+                          "backend/chat_state.py":  "048b202f2ad0ecd3727f687c54af3ce1e3580a0e8f6a5b2e19cb24a09d793aeb",
+                          "backend/main.py":  "bc8584bde7db0bdfefd8a226e4c4d6196e51772bb659377b90cdbc13bb575a99",
+                          "backend/models.py":  "7fe60223a201555cc58f93d0828e94c01f3ae36ab91ddac7d8d88249a38ab4bb",
+                          "backend/physics.py":  "397809b16c95cd72020ee147f0337325a76c2448f93a843b7359dd777b9931c9",
+                          "backend/providers.py":  "267fcd03e7d803def363d262d5b71c2e04bf00779bef0348eb576ee5a91542f9",
+                          "backend/tutor_agent.py":  "84e51db0387edb60ae246070aa4e9dd7800d6f92ee4fc6352e08b36d55e4fec3",
+                          "backend/tutor_context.py":  "87f9b6c04b7eca72dc2d085136daf14ed1a0984f9bb627f123f72b4f89f2cf67",
+                          "backend/memory_retrieval.py":  "08b8ea1f34fbc064d1365af125a35b627a69fe50e55786f5c0492620a6f3dbdd",
+                          "prompts/tutor/instructions.md":  "16d46a6c135b4f2c6c1ee27e3ae89dbbecb363c2a3440773719b9ebb14786708",
+                          "prompts/tutor/agent.md":  "9e45efb6cdf39d13a0e91fa72af316c435fef0a31e316ca9051f4e107af0b58a",
+                          "prompts/tutor/agent-codex.md":  "fe49982c640fe99fa8c0e2ea91d9fab033f88edfaeeaeb37e51d03e53c44ded6",
+                          "prompts/tutor/physics-specialist.md":  "89a1b072963f865923d4f16d77ab714dc83d4218a64df6cb597e3e7f13b70c4a",
+                          "prompts/tutor/summary.md":  "26d7db94a5cefd1b1a02a96f9e13716b2e95fbc9199e888cb3171d9b6dd5459c",
+                          "prompts/tutor/working-context.md":  "73e0e49671d8e42f9f8f4129902cc910dd9f0243fbb338975adec46c7549ced3",
+                          "prompts/tutor/learner-memory.md":  "c7496ef1284f3415ec35f0069ede8a46888bbbc698dea3a815693e581b5cd67f",
+                          "prompts/providers/codex-context.md":  "85bd5bb64564ee7025e067bb4d895e2052ecfc6d93b72e2037ed22e79a100326",
+                          "prompts/providers/openai-context.md":  "ce0bbc9cde14dd43091f346542c84d268c8bf431b0f91cd9a633737ba0fbd273",
+                          "prompts/tools/calculator.md":  "9dcfd9040f2b06310bf5a49fd6e1bf5783e08cf2a481b2006ed1a78bfc1efc21",
+                          "prompts/tools/simulate_motion.md":  "da5a2febdfe94fe7d758d71a86df7aabce1b984c623e65661b8effc794508100",
+                          "src/main.tsx":  "f1301efad2f00308df9e0f95717c3861ef3a554c5a16be084266caddabac7819",
+                          "src/types.ts":  "46c5b010a7a3d907c124d95fe5e017a7764cf02f75d862c5284c3452bee200d5",
+                          "package-lock.json":  "b5581c04223eb63b9ce5cd178427e86a34189affef462ee4323c12736172b771",
+                          "requirements.txt":  "0899afa1da0fad25614179e5955cda382969c3a8421c0daf69c74f25185489b0",
+                          "tests/test_study.py":  "8a5d4790153103cde732c5a10a412c4a09423bda35807e9d3c44586b1401da01",
+                          "tests/test_tutor_agent.py":  "dc8c5ae938d96189ea68d2749526080b32cee7919a8b2b22d8d6c93cfc508c9d",
+                          "tests/browser.mjs":  "12deb8ef6c541bc012b97b7733ab50cf79db3a1bd1a5d506426e3eeff8da8d79",
+                          "tests/evals/runner.py":  "c4af87b8628c1dbfa825fa5d0056c75656be866c6436d7d501d2579786672c21",
+                          "tests/evals/fixtures.py":  "b941b4b98905861806d33b650717638bcac469dad8305bd0e735000fb2912e2a",
+                          "result/phase-4/code/benchmark.py":  "4ab3710c3a5148874e2bf61d6ba97f57f4af6fafb2c32eaf0a70f746ad98c38b"
+                      },
+    "prerequisites":  {
+                          "platform":  "Microsoft Windows NT 10.0.26200.0",
+                          "logical_processors":  12,
+                          "python":  "Python 3.12.14",
+                          "node":  "v24.11.1",
+                          "chrome":  "158.0.8127.36",
+                          "credentials":  "None. Scripted provider boundaries, synthetic study data and local Chrome."
+                      },
+    "commands":  {
+                     "unit":  "$env:STUDY_TUTOR_AGENT=\"0\"; .\\.venv\\Scripts\\python.exe -m unittest discover -s tests -v",
+                     "phase4":  ".\\.venv\\Scripts\\python.exe -m unittest discover -s tests -p test_tutor_agent.py -v",
+                     "build":  "npm.cmd run build",
+                     "browser":  "$env:STUDY_TUTOR_AGENT=\"1\"; npm.cmd run test:ui",
+                     "benchmark":  ".\\.venv\\Scripts\\python.exe result/phase-4/code/benchmark.py --samples 20 --output result/phase-4/evidence/benchmark.json",
+                     "cli_options":  "codex --version, codex exec --help"
+                 }
+}
