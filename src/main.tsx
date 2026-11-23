@@ -2,6 +2,7 @@ import {tr, language} from './language';
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Lab} from './Lab';
+import {MemorySettings} from './MemorySettings';
 import {formulas,renderMath,sourceText} from './math';
 import {api,type Road,type Bundle,type Topic,type Anchor,type Msg,type Progress} from './types';
 import './style.css';
@@ -106,17 +107,51 @@ function TutorPanel({path,open,close,branch,setBranch,note}:{path:string,open:bo
   </section>
 }
 
-function Reader({road,topic}:{road:Road,topic:Topic}){
+function Reader({road,topic,memoryEpoch}:{road:Road,topic:Topic,memoryEpoch:number}){
   const path=road.id+'/'+topic.id;
   const [bundle,setBundle]=useState<Bundle|null>(null),[err,setErr]=useState(''),[busy,setBusy]=useState(false);
   const [tutorOpen,setTutorOpen]=useState(()=>window.location.hash==='#tutor'),[branch,setBranch]=useState(newThread);
   const tutorButton=useRef<HTMLButtonElement>(null);
   const [attempt,setAttempt]=useState<number|null>(null);
+  const [remembered,setRemembered]=useState<string|null>(null);
+  const quizRequests=useRef<Record<number,{answer:string,id:string}>>({});
   const snapshots=useRef<Record<number,Record<string,number>>>({}), live=useRef(true),restored=useRef(false);
   const doc=bundle?.doc;
   function openHighlight(id:string){setBranch(id);setTutorOpen(true)}
   function closeTutor(){setTutorOpen(false);tutorButton.current?.focus({preventScroll:true})}
-  useEffect(()=>{live.current=true;api<Bundle>('lesson/'+path).then(b=>{if(live.current)setBundle(b)}).catch(e=>{if(live.current)setErr(String(e))});return()=>{live.current=false}},[path]);
+  useEffect(()=>{
+    live.current=true;
+    setRemembered(null);
+    let current=true;
+    api<Bundle>('lesson/'+path).then(b=>{if(current)setBundle(b)}).catch(e=>{if(current)setErr(String(e))});
+    return()=>{current=false;live.current=false};
+  },[path,memoryEpoch]);
+  async function submitQuiz(event:React.FormEvent<HTMLFormElement>,question:number){
+    event.preventDefault();
+    const answer=new FormData(event.currentTarget).get('answer');
+    if(typeof answer!=='string'||attempt!==null)return;
+    if(quizRequests.current[question]?.answer!==answer)quizRequests.current[question]={answer,id:crypto.randomUUID()};
+    const attempt_id=quizRequests.current[question].id;
+    setAttempt(question);
+    setErr('');
+    try{
+      const progress=await api<Progress>('quiz/'+path,{question,answer,attempt_id});
+      delete quizRequests.current[question];
+      setBundle(b=>b&&({...b,progress}));
+    }catch(e){setErr(String(e))}
+    finally{setAttempt(null)}
+  }
+  async function rememberPattern(question:number,attempt_id:string){
+    setAttempt(question);
+    setErr('');
+    try{
+      await api('memories/resume',{attempt_id});
+      setRemembered(attempt_id);
+      const {progress}=await api<Bundle>('lesson/'+path);
+      setBundle(b=>b&&({...b,progress}));
+    }catch(e){setErr(String(e))}
+    finally{setAttempt(null)}
+  }
   useEffect(()=>{
     if(!doc||restored.current)return;restored.current=true;const original=bundle!.scroll;
     const raf=requestAnimationFrame(()=>window.scrollTo(0,original));
@@ -152,16 +187,20 @@ function Reader({road,topic}:{road:Road,topic:Topic}){
   {doc&&bundle&&<><div className="intro">{annotated('intro',doc.intro)}</div><nav className="tabs"><a href="#lesson">{tr("Bài giảng", "Lesson")}</a><a href="#quiz">Quiz</a><button type="button" ref={tutorButton} aria-controls="tutor" aria-expanded={tutorOpen} onClick={()=>tutorOpen?closeTutor():setTutorOpen(true)}>{tr("Hỏi gia sư", "Ask the tutor")}</button></nav>
   <div id="lesson">{doc.sections.map((s,i)=><section key={i}><h2>{renderMath(s.title)}</h2>{annotated('s'+i,s.text)}
     {doc.illustrations.map((v,j)=>v.section===i?<Lab key={j} item={v} index={j} path={path} annotate={annotated} onSnapshot={state=>{snapshots.current[j]=state}}/>:null)}</section>)}</div>
-  <section id="quiz"><h2>{tr("Kiểm tra nhanh", "Quick quiz")}</h2>{doc.quiz.map((q,i)=>{const prev=bundle.progress[i]?.at(-1);return <form key={i} className="question" onSubmit={async e=>{e.preventDefault();const answer=new FormData(e.currentTarget).get('answer');setAttempt(i);setErr('');try{const progress=await api<Progress>('quiz/'+path,{question:i,answer});setBundle(b=>b&&({...b,progress}))}catch(e){setErr(String(e))}finally{setAttempt(null)}}}>
+  <section id="quiz"><h2>{tr("Kiểm tra nhanh", "Quick quiz")}</h2>{doc.quiz.map((q,i)=>{const prev=bundle.progress[i]?.at(-1);return <form key={i} className="question" onSubmit={e=>void submitQuiz(e,i)}>
     <h3>{renderMath(q.prompt)}</h3>{q.kind==='choice'?q.choices.map(c=><label className="inline" key={c}><input type="radio" name="answer" required value={c} defaultChecked={prev?.answer===c}/><span>{renderMath(c)}</span></label>):<label>{tr("Đáp số và đơn vị", "Answer and unit")}<input required name="answer" defaultValue={prev?.answer} placeholder={tr("Ví dụ: 1,5 m", "For example, 1.5 m")}/></label>}
-    <button disabled={attempt!==null}>{tr("Kiểm tra đáp án", "Check answer")}</button>{prev&&<p role="status" className={prev.correct?'success':'feedback'}><b>{prev.correct?tr("Chính xác.", "Correct."):tr("Chưa đúng.", "Try again.")}</b> {renderMath(prev.explanation)}</p>}</form>})}</section>
+    <button disabled={attempt!==null}>{tr("Kiểm tra đáp án", "Check answer")}</button>{prev&&<p role="status" className={prev.correct?'success':'feedback'}><b>{prev.correct?tr("Chính xác.", "Correct."):tr("Chưa đúng.", "Try again.")}</b> {renderMath(prev.explanation)}
+      {prev.attempt_id&&remembered===prev.attempt_id&&<> {tr('Đã lưu lại lỗi này.','Pattern remembered.')}</>}</p>}
+    {prev?.can_remember&&prev.attempt_id&&remembered!==prev.attempt_id&&<button type="button" disabled={attempt!==null}
+      onClick={()=>void rememberPattern(i,prev.attempt_id!)}>{tr('Ghi nhớ lỗi này','Remember this pattern')}</button>}
+  </form>})}</section>
   {!!bundle.notes.length&&<details><summary>{tr("Các đoạn đã đánh dấu", "Highlighted passages")} ({bundle.notes.length})</summary>{bundle.notes.map(n=><button className="note" key={n.id} onClick={()=>openHighlight(n.id)}>{renderMath(n.quote)}</button>)}</details>}
   </>}</article>{doc&&<TutorPanel path={path} open={tutorOpen} close={closeTutor} branch={branch} setBranch={setBranch} note={bundle?.notes.find(note=>note.id===branch)}/>}</div>
 }
 
 type AISettings={provider:'openai'|'codex',saved_key:boolean,environment_key:boolean,codex:'ready'|'logged_out'|'missing'|'unknown',codex_model:string|null,codex_models:{id:string,name:string}[]};
 
-function Settings({close}:{close:()=>void}){
+function Settings({close,onMemoryPolicyChange}:{close:()=>void,onMemoryPolicyChange:()=>void}){
   const [settings,setSettings]=useState<AISettings|null>(null),[key,setKey]=useState(''),[remove,setRemove]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   useEffect(()=>{let active=true;api<AISettings>('settings').then(s=>{if(active)setSettings(s)}).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[]);
@@ -183,11 +222,13 @@ function Settings({close}:{close:()=>void}){
       {settings.codex_models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
     </select></label></>}
     <button className="primary" disabled={busy}>{busy?tr("Đang lưu…", "Saving…"):tr("Lưu cài đặt", "Save settings")}</button>
-  </form>:!error&&<p>{tr("Đang đọc cài đặt…", "Loading settings…")}</p>}{error&&<p role="alert">{error}</p>}</Dialog>
+  </form>:!error&&<p>{tr("Đang đọc cài đặt…", "Loading settings…")}</p>}{error&&<p role="alert">{error}</p>}
+  <MemorySettings onMemoryPolicyChange={onMemoryPolicyChange}/></Dialog>
 }
 
 function App(){
   const [showSettings,setShowSettings]=useState(false);
+  const [memoryEpoch,setMemoryEpoch]=useState(0);
   const [roads,setRoads]=useState<Road[]>([]),[selected,setSelected]=useState(()=>localStorage.getItem('selected')||(language==='en'?'physics/free-fall':'vat-ly/roi-tu-do')),[planner,setPlanner]=useState<'new'|'revise'|null>(null),[err,setErr]=useState('');
   useEffect(()=>{api<Road[]>('roads').then(setRoads).catch(e=>setErr(String(e)))},[]);
   const [rid,tid]=selected.split('/'),road=roads.find(r=>r.id===rid)||roads[0],topic=road?.chapters.flatMap(c=>c.topics).find(t=>t.id===tid)||road?.chapters[0].topics[0];
@@ -199,10 +240,10 @@ function App(){
     if(samples[selected])localStorage.setItem('selected',samples[selected]);
     window.location.reload();
   }}><option value="vi" lang="vi">Tiếng Việt</option><option value="en" lang="en">English</option></select><button onClick={()=>setShowSettings(true)}>{tr("Cài đặt", "Settings")}</button><button onClick={()=>setPlanner('new')}>{tr("＋ Tạo lộ trình", "＋ Create roadmap")}</button></div></header>
-  {showSettings&&<Settings close={()=>setShowSettings(false)}/>}
+  {showSettings&&<Settings close={()=>setShowSettings(false)} onMemoryPolicyChange={()=>setMemoryEpoch(n=>n+1)}/>}
   {err&&<p role="alert">{err}</p>}{road&&topic&&<div className="layout"><aside><label>{tr("Lộ trình của bạn", "Your roadmap")}<select value={road.id} onChange={e=>{const r=roads.find(x=>x.id===e.target.value)!;choose(r,r.chapters[0].topics[0])}}>{roads.map(r=><option key={r.id} value={r.id}>{r.title}</option>)}</select></label>
     {road.chapters.map((c,i)=><div key={i}><h3>{c.title}</h3>{c.topics.map(t=><button key={t.id} className={'topic '+(t.id===topic.id?'selected':'')} aria-current={t.id===topic.id?'page':undefined} onClick={()=>choose(road,t)}>{t.title}</button>)}</div>)}
-    <button className="revise" onClick={()=>setPlanner('revise')}>{tr("Tạo phiên bản mới", "Create new version")}</button></aside><main><Reader key={road.id+'/'+topic.id} road={road} topic={topic}/></main></div>}
+    <button className="revise" onClick={()=>setPlanner('revise')}>{tr("Tạo phiên bản mới", "Create new version")}</button></aside><main><Reader key={road.id+'/'+topic.id} road={road} topic={topic} memoryEpoch={memoryEpoch}/></main></div>}
     {planner&&<Planner base={planner==='revise'?road:null} close={()=>setPlanner(null)} done={r=>{setRoads([r,...roads]);choose(r,r.chapters[0].topics[0]);setPlanner(null)}}/>}</>
 }
 createRoot(document.getElementById('root')!).render(<App/>);

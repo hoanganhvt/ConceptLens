@@ -52,7 +52,7 @@ def motion(config: Motion):
     return dict(params=config.model_dump(), points=points, marks=marks)
 
 
-def quantity(text):
+def parse_quantity(text):
     text = text.replace("·", "*").replace("⋅", "*")
     match = re.fullmatch(r"\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d+)?)\s*([\wµ°/*^ .²³⁻-]{0,40})\s*", text)
     if not match:
@@ -61,16 +61,29 @@ def quantity(text):
         number = float(match[1].replace(",", "."))
         if not math.isfinite(number):
             raise ValueError()
-        return units.Quantity(number, units.parse_units(match[2].strip() or "dimensionless"))
+        unit = match[2].strip()
+        return units.Quantity(number, units.parse_units(unit or "dimensionless")), bool(unit)
     except Exception as exc:
         raise ValueError(tr("Số hoặc đơn vị không hợp lệ.", "Invalid number or unit.")) from exc
 
 
-def grade(question, answer):
+def quantity(text):
+    return parse_quantity(text)[0]
+
+
+def assess(question, answer):
     if question["kind"] == "choice":
-        return question["answer"] == answer
-    expected, actual = quantity(question["answer"]), quantity(answer)
+        return question["answer"] == answer, None, None
+    expected = quantity(question["answer"])
+    actual, has_unit = parse_quantity(answer)
+    powers = sorted(expected.dimensionality.items())
+    dimension = " ".join(f"{name}^{power:g}" if power != 1 else name for name, power in powers) or "dimensionless"
     if not actual.is_compatible_with(expected):
-        return False
-    return math.isclose(actual.to(expected.units).magnitude, expected.magnitude, rel_tol=0.001, abs_tol=1e-9)
+        return False, "incompatible_unit" if has_unit else "missing_unit", dimension
+    correct = math.isclose(actual.to(expected.units).magnitude, expected.magnitude, rel_tol=0.001, abs_tol=1e-9)
+    return correct, "correct" if correct else None, dimension
+
+
+def grade(question, answer):
+    return assess(question, answer)[0]
 

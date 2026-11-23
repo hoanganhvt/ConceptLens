@@ -24,6 +24,12 @@
 .tutor-conversation form{flex:none;padding:8px 0 2px}
 .tutor-conversation textarea{max-height:25dvh}
 .tutor-conversation form .actions{margin:0}
+.memory-settings{margin-top:24px;padding-top:18px;border-top:1px solid #d5d9ce}
+.memory-item{max-width:none;padding:14px;margin:12px 0;background:#fffefb;border:1px solid #d6dccf;border-radius:10px}
+.memory-item h4,.memory-item ul{margin:0}
+.memory-item ul{padding-inline-start:22px}
+.memory-item li{margin:6px 0}
+.memory-meta,.memory-item time{color:#536558;font-size:14px}
 @media(min-width:1121px){
   .reader-spread:has(.tutor-panel:not([hidden])){display:grid;grid-template-columns:minmax(0,1fr) clamp(330px,28vw,410px);align-items:start}
   .tutor-panel{position:sticky;top:0;height:calc(100dvh - 74px);min-height:min(420px,100dvh)}

@@ -2,22 +2,24 @@
 
 ## Follow the plan
 
-Read this file when the user says "follow the plan". The user decides which delivery phase to work on and when to enter planning, implementation, or testing. Wait for the user to choose before starting work or switching phases. The delivery sequence and its exit checks guide the chosen work.
+Read this file when the user says "follow the plan". Once the user chooses a delivery phase, the coordinating agent carries it through planning, implementation, and independent testing without separate approval at each step. The delivery sequence and its exit checks guide the work. Ask the user only when a decision or permission is required to proceed.
 
 ### Planning before implementation
 
-1. Before changing code for a delivery phase, save its full requirements and implementation plan under `plans/`, for example `plans/phase-2.md`. Keep `plans/` empty until the user starts the next planning phase.
+1. Before changing code for a delivery phase, save its full requirements and implementation plan under `plans/`, for example `plans/phase-2.md`.
 2. Give every mandatory requirement a stable ID such as `R1`. State what must be achieved, how to recognize success, and which test will verify it. Include the scope, constraints, dependencies, affected interfaces, expected behavior, and relevant failure cases in enough detail that another implementer can follow the plan.
 3. Split implementation into small tasks with stable IDs such as `T1` and link each task to the requirements it fulfills. Start tasks with `[ ]` and change them to `[x]` only after the planned work is complete. Note blockers and partial progress next to the relevant task.
 4. Include an independent test checklist. Give each test a stable ID, link it to its requirements, and write out the prerequisites, steps, expected result, and evidence to record. Start every test as `Pending`.
 
 ### Implementation phase
 
-Start implementation only after the plan is saved and the user explicitly starts this phase. Complete the approved tasks and update their markers in `plans/`. Record what changed and what remains open. Leave test statuses pending and wait for the user to start the test phase.
+After saving the plan, delegate the planned tasks to an implementation subagent. Give it the plan, task IDs, and relevant constraints. The coordinating agent reviews the changes, updates task markers in `plans/`, and records what changed and what remains open. Leave test statuses pending and proceed to the test phase once implementation is ready.
+
+Before marking a delivery phase's implementation complete, save an architecture document in `documents/`, for example `documents/phase-2-architecture.md`. Document everything implemented in that phase as it exists in the code. Cover components and responsibilities, how they interact, data and control flow, interfaces, storage and dependencies, and the reasons for key design decisions. Link to the relevant source files and update the document whenever follow-up implementation changes that architecture.
 
 ### Test phase
 
-Start testing only when the user explicitly starts this phase and identifies the work to verify. Use the saved requirements, test checklist, and delivery-phase exit check to evaluate the chosen code. Record each test as `Pass`, `Fail`, or `Blocked` with evidence. Report defects without changing product code. The user decides when to return to implementation for fixes or start another test run.
+Delegate testing to a separate subagent using the saved requirements, test checklist, and delivery phase's exit check. The testing subagent records each test as `Pass`, `Fail`, or `Blocked` with evidence and reports defects without changing product code. The coordinating agent reviews the evidence, sends in-scope fixes back to the implementation subagent, and has the testing subagent rerun affected checks. Repeat until the completion conditions are met or a blocker requires user input.
 
 Write an English report in `result/` listing the delivered functionality, test results, and any outstanding items. Prefix the delivery phase title with `done` only after the planned implementation is complete, every mandatory requirement and exit check has passed in the test phase, and the report is saved.
 
@@ -70,7 +72,9 @@ Plan for the existing Windows, local-first application. Start with one local lea
 
 **Exit check.** Force a tiny context window over a long bilingual fixture. Every serialized request fits, the final answer can recover the earlier 2-second calculation, and neither a sibling highlight nor a newer slider position appears as its source. Reloading the UI shows the full history. Inject summary failure, duplicate sends and an expired reservation to verify fallback and exactly one committed reply.
 
-### Phase 2 — Persist and maintain long-term learner memory
+### done — Phase 2 — Persist and maintain long-term learner memory
+
+See the [Phase 2 architecture](documents/phase-2-architecture.md) and [verification report](result/phase-2.md).
 
 Create additive SQLite migrations and apply each version transactionally before serving requests. Use the current data directory and backup path. Keep new writes independently switchable. Suggested logical records:
 
@@ -190,7 +194,7 @@ Ship the runner and the Python/Node tool switches separately. A sandbox rollback
 
 Ship additive migrations first, then enable bounded context, memory capture, retrieval and the shared loop behind independent switches. Use synthetic data for shadow retrieval, then enable read/write memory for an opt-in local pilot. Keep the prior chat path callable during rollout. Run a migration and rollback rehearsal on a disposable populated data directory. Disable retrieval first if relevance deteriorates, disable capture if evidence is unreliable, and revert the loop independently for provider regressions. Enforce deletion and scope rules on every enabled path. Disable dependent features together when reverting their prerequisites.
 
-Use these checks in the independent test phase after the user starts it. Cover each delivery phase's exit check in the Python suite and use the browser smoke test for highlight isolation, retry behavior, linked evidence, bilingual memory controls and persistence after reload where relevant. Use the repository's development commands:
+Use these checks in the independent test phase. Cover each delivery phase's exit check in the Python suite and use the browser smoke test for highlight isolation, retry behavior, linked evidence, bilingual memory controls and persistence after reload where relevant. Use the repository's development commands:
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests

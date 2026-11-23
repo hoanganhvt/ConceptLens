@@ -1,10 +1,15 @@
 import json
 import os
+import shutil
+import sqlite3
+import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from copy import deepcopy
-from subprocess import CompletedProcess
+from pathlib import Path
+from subprocess import CompletedProcess, run
 from threading import Event
 from unittest.mock import patch
 from uuid import uuid4
@@ -260,6 +265,307 @@ class TutorContext(unittest.TestCase):
             self.assertIn("Shorten your question", response.json()["detail"])
             sdk.return_value.responses.create.assert_not_called()
         self.assertIsNone(app.get(self.key))
+
+
+class MemoryMigration(unittest.TestCase):
+    def test_legacy_upgrade_repeat_and_restore(self):
+        records = {
+            "progress:physics:free-fall": {"0": [{"answer": "1962 cm", "correct": True, "explanation": "Conversion"}]},
+            "thread:physics:free-fall:main": [{"role": "user", "text": "Legacy question"}],
+        }
+        summary = ("local", "physics", "free-fall", "old-version", "main", 1, 2, '{"text":"Older turns"}')
+        for version in (0, 1):
+            with self.subTest(version=version), tempfile.TemporaryDirectory() as folder:
+                study = Path(folder) / "study"
+                study.mkdir()
+                road = study / "kept-road"
+                road.mkdir()
+                saved_road = road / "roadmap.json"
+                saved_road.write_bytes(b'{"title":"Saved roadmap"}')
+                with closing(sqlite3.connect(study / "study.sqlite")) as conn, conn:
+                    conn.execute("CREATE TABLE records (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                    conn.executemany("INSERT INTO records VALUES (?,?)", [(k, json.dumps(v)) for k, v in records.items()])
+                    if version == 1:
+                        app.chat_state.migrate(conn)
+                        conn.execute("PRAGMA user_version=1")
+                        conn.execute("INSERT INTO tutor_summaries VALUES (?,?,?,?,?,?,?,?)", summary)
+                restored = Path(folder) / "restored"
+                for directory in (study, study, restored):
+                    if directory == restored:
+                        shutil.copytree(study, restored)
+                    result = run([sys.executable, "-c", "import backend.main"],
+                                 env={**os.environ, "STUDY_DATA": str(directory)}, capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    with closing(sqlite3.connect(directory / "study.sqlite")) as conn:
+                        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 2)
+                        for key, value in records.items():
+                            row = conn.execute("SELECT value FROM records WHERE key=?", (key,)).fetchone()
+                            self.assertEqual(json.loads(row[0]), value)
+                        if version == 1:
+                            self.assertEqual(conn.execute("SELECT * FROM tutor_summaries").fetchone(), summary)
+                    self.assertEqual((directory / "kept-road" / "roadmap.json").read_bytes(), saved_road.read_bytes())
+
+    def test_failed_migration_rolls_back_schema_and_version(self):
+        with tempfile.TemporaryDirectory() as folder:
+            study = Path(folder)
+            script = """
+from unittest.mock import patch
+from backend import learner_memory
+
+def fail(conn):
+    conn.execute('CREATE TABLE partial_migration (id INTEGER)')
+    raise RuntimeError('injected migration failure')
+
+with patch.object(learner_memory, 'migrate', fail):
+    import backend.main
+"""
+            with closing(sqlite3.connect(study / "study.sqlite")) as conn, conn:
+                conn.execute("CREATE TABLE records (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+                conn.execute("INSERT INTO records VALUES ('old', '123')")
+            result = run([sys.executable, "-c", script], env={**os.environ, "STUDY_DATA": folder},
+                         capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("injected migration failure", result.stderr)
+            with closing(sqlite3.connect(study / "study.sqlite")) as conn:
+                self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 0)
+                self.assertEqual(conn.execute("SELECT * FROM records").fetchall(), [("old", "123")])
+                self.assertEqual(conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(), [("records",)])
+
+
+class LearnerMemory(unittest.TestCase):
+    base = "/api/memories"
+
+    def setUp(self):
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        self.enterContext(patch.object(app, "DATA", Path(directory)))
+        with app.db() as conn:
+            conn.execute("CREATE TABLE records (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            app.chat_state.migrate(conn)
+            app.learner_memory.migrate(conn)
+            conn.execute("PRAGMA user_version=2")
+        self.client = TestClient(app.app, headers={"X-Study-Language": "en"})
+        self.addCleanup(self.client.close)
+        self.rid, self.tid, self.doc = self.seed_lesson()
+        self.quiz = f"/api/quiz/{self.rid}/{self.tid}"
+
+    def seed_lesson(self):
+        road = app.commit(Roadmap.model_validate(ROAD))
+        rid, tid = road["id"], road["chapters"][0]["topics"][0]["id"]
+        doc = deepcopy(SAMPLE)
+        doc["quiz"].extend({"kind": "number", "prompt": prompt, "answer": answer, "choices": [], "explanation": answer}
+                           for prompt, answer in [("How far?", "42 m"), ("How long?", "7 s"), ("Distance?", "9 m")])
+        doc["version"] = uuid4().hex
+        app.put(f"lesson:{rid}:{tid}", doc)
+        return rid, tid, doc
+
+    def capture(self, enabled):
+        response = self.client.put(f"{self.base}/capture", json={"enabled": enabled})
+        self.assertEqual(response.status_code, 200, response.text)
+
+    def memories(self):
+        response = self.client.get(self.base)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()["memories"]
+
+    def submit(self, question, answer, attempt_id=None):
+        return self.client.post(self.quiz, json={"question": question, "answer": answer,
+                                                "attempt_id": attempt_id or str(uuid4())})
+
+    def attempt(self, question, answer):
+        response = self.submit(question, answer)
+        self.assertEqual(response.status_code, 200, response.text)
+        return response.json()[str(question)][-1]
+
+    def process(self):
+        app.learner_memory.process_pending(app.db)
+
+    def restart_memories(self, wait_for=""):
+        script = """
+import json
+import sys
+from time import monotonic, sleep
+from fastapi.testclient import TestClient
+from backend.main import app
+
+with TestClient(app) as client:
+    deadline = monotonic() + 8
+    while True:
+        memories = client.get('/api/memories').json()['memories']
+        if not sys.argv[1] or any(m['status'] == sys.argv[1] for m in memories) or monotonic() >= deadline:
+            print(json.dumps(memories))
+            break
+        sleep(0.05)
+"""
+        result = run([sys.executable, "-c", script, wait_for],
+                     env={**os.environ, "STUDY_DATA": str(app.DATA)}, capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def test_opt_in_and_explicit_memories_shared_without_tutor_access(self):
+        self.assertFalse(self.client.get(self.base).json()["enabled"])
+        self.attempt(0, "19.62 s")
+        self.process()
+        self.assertEqual(self.memories(), [])
+        self.capture(True)
+        self.assertEqual(self.client.get(f"/api/lesson/{self.rid}/{self.tid}").status_code, 200)
+        with patch.object(app.ai, "structured", return_value=ROAD):
+            draft = self.client.post("/api/drafts", json={"subject": "Physics", "goal": "Draft-only goal",
+                                                         "level": "New", "schedule": "1 hour"}).json()
+        self.assertEqual(self.client.post("/api/roads", json=draft).status_code, 200)
+        self.process()
+        self.assertEqual(self.memories(), [])
+        for kind, statement in (("goal", "Chuyển đổi đơn vị"), ("preference", "Explain with a diagram")):
+            response = self.client.post(self.base, json={"kind": kind, "statement": statement},
+                                        headers={"X-Study-Language": "vi" if kind == "goal" else "en"})
+            self.assertEqual(response.status_code, 200, response.text)
+        for language in ("vi", "en"):
+            memories = self.client.get(self.base, headers={"X-Study-Language": language}).json()["memories"]
+            self.assertEqual({(m["kind"], m["statement"]) for m in memories},
+                             {("goal", "Chuyển đổi đơn vị"), ("preference", "Explain with a diagram")})
+        self.assertEqual({(m["kind"], m["statement"]) for m in self.restart_memories()},
+                         {("goal", "Chuyển đổi đơn vị"), ("preference", "Explain with a diagram")})
+        with patch.object(app.ai, "chat", return_value={"role": "assistant", "text": "Reply"}) as provider:
+            self.assertEqual(self.client.post(f"/api/chat/{self.rid}/{self.tid}/main", json={"text": "Explain."}).status_code, 200)
+            self.assertNotIn("Explain with a diagram", str(provider.call_args))
+            self.assertNotIn("Chuyển đổi đơn vị", str(provider.call_args))
+        self.capture(False)
+        self.attempt(2, "42 s")
+        self.capture(True)
+        self.process()
+        self.assertEqual(len(self.memories()), 2)
+
+    def test_memory_scope_is_one_roadmap_and_one_owner(self):
+        self.capture(True)
+        self.attempt(0, "19.62 s")
+        rid, tid, _ = self.seed_lesson()
+        other = self.client.post(f"/api/quiz/{rid}/{tid}", json={"question": 2, "answer": "42 s"})
+        self.assertEqual(other.status_code, 200, other.text)
+        self.process()
+        memories = self.memories()
+        self.assertEqual({(m["roadmap_id"], m["status"]) for m in memories},
+                         {(self.rid, "tentative"), (rid, "tentative")})
+        response = self.client.post(self.base, json={"kind": "preference", "statement": "Private fixture"})
+        self.assertEqual(response.status_code, 200, response.text)
+        private = next(m for m in self.memories() if m["kind"] == "preference")
+        with app.db() as conn:
+            conn.execute("UPDATE learner_memories SET owner='other' WHERE id=?", (private["id"],))
+        self.assertEqual(len(self.memories()), 2)
+        path = f"{self.base}/{private['id']}"
+        self.assertEqual(self.client.patch(path, json={"statement": "Edited", "revision": private["revision"]}).status_code, 404)
+        self.assertEqual(self.client.delete(path, params={"revision": private["revision"]}).status_code, 404)
+
+    def test_unit_diagnostics_dedup_and_resolution(self):
+        self.capture(True)
+        first = self.attempt(0, "19.62 s")
+        attempt_id = first["attempt_id"]
+        self.assertEqual(self.submit(0, "19.62 s", attempt_id).json()["0"], [first])
+        self.assertEqual(self.submit(0, "19.63 s", attempt_id).status_code, 409)
+        self.assertEqual(self.submit(2, "19.62 s", attempt_id).status_code, 409)
+        latest = self.attempt(0, "19.62 kg")
+        self.attempt(2, "41 m")
+        self.attempt(1, self.doc["quiz"][1]["choices"][0])
+        self.assertEqual(self.submit(2, "invalid").status_code, 422)
+        self.process()
+        candidate, = self.memories()
+        self.assertEqual((candidate["status"], candidate["diagnostic"], candidate["roadmap_id"]),
+                         ("tentative", "incompatible_unit", self.rid))
+        self.assertEqual([ref["attempt_id"] for ref in candidate["evidence"]], [latest["attempt_id"]])
+        other = self.attempt(2, "42 s")
+        self.attempt(3, "7 m")
+        self.attempt(4, "9")
+        self.process()
+        recurring, = [m for m in self.memories() if m["status"] == "recurring"]
+        self.assertEqual(recurring["id"], candidate["id"])
+        self.assertEqual({ref["attempt_id"] for ref in recurring["evidence"]}, {latest["attempt_id"], other["attempt_id"]})
+        self.assertEqual({m["diagnostic"] for m in self.memories()}, {"incompatible_unit", "missing_unit"})
+        for question, answer, status in [(0, "1962 cm", "tentative"), (2, "42 m", "resolved")]:
+            self.assertTrue(self.attempt(question, answer)["correct"])
+            self.process()
+            self.assertEqual(next(m["status"] for m in self.memories() if m["id"] == recurring["id"]), status)
+
+    def test_concurrent_retry_and_worker_recovery(self):
+        self.capture(True)
+        attempt_id = str(uuid4())
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first, second = (pool.submit(self.submit, 0, "19.62 s", attempt_id) for _ in range(2))
+            expected = first.result(timeout=10)
+            self.assertEqual(expected.status_code, 200)
+            self.assertEqual(expected.json(), second.result(timeout=10).json())
+            self.assertEqual(len(expected.json()["0"]), 1)
+        with patch.object(app.learner_memory, "apply_event", side_effect=RuntimeError("synthetic processor failure")):
+            with self.assertLogs(app.learner_memory.__name__, level="WARNING") as captured:
+                self.process()
+            self.assertIn("RuntimeError", captured.output[0])
+            self.assertNotIn("synthetic processor failure", captured.output[0])
+            self.assertEqual(self.memories(), [])
+            with app.db() as conn:
+                self.assertEqual(conn.execute("SELECT failures FROM learner_memory_pending").fetchall(), [(1,)])
+        self.attempt(2, "42 s")
+        memory, = self.restart_memories("recurring")
+        self.assertEqual(memory["status"], "recurring")
+        self.assertEqual(len(memory["evidence"]), 2)
+        self.attempt(0, "1962 cm")
+        corrected = self.client.patch(f"{self.base}/{memory['id']}",
+                                      json={"statement": "I can now convert length units", "revision": memory["revision"]})
+        self.assertEqual(corrected.status_code, 200, corrected.text)
+        self.assertEqual(self.client.post(self.base, json={"kind": "preference", "statement": "Explain first"}).status_code, 200)
+        preference = next(m for m in self.memories() if m["kind"] == "preference")
+        response = self.client.patch(f"{self.base}/{preference['id']}",
+                                     json={"statement": "Show the formula first", "revision": preference["revision"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.process()
+        self.assertEqual({m["statement"] for m in self.memories()}, {"I can now convert length units", "Show the formula first"})
+        self.attempt(3, "7 m")
+        self.capture(False)
+        self.capture(True)
+        self.process()
+        self.assertEqual(len(self.memories()), 2)
+
+    def test_source_conflict_forget_replay_and_resume(self):
+        self.capture(True)
+        first = self.attempt(0, "19.62 s")
+        self.attempt(2, "42 s")
+        self.process()
+        memory, = self.memories()
+        path = f"{self.base}/{memory['id']}"
+        source = f"{path}/evidence/{first['attempt_id']}"
+        self.attempt(0, "1962 cm")
+        response = self.client.get(source, headers={"X-Study-Language": "vi"})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual((response.json()["answer"], response.json()["correct"]), ("19.62 s", False))
+        self.assertEqual(self.client.get(f"{path}/evidence/{uuid4()}").status_code, 404)
+        key = f"lesson:{self.rid}:{self.tid}"
+        app.put(key, {**self.doc, "version": uuid4().hex})
+        self.assertIn(self.client.get(source).status_code, (404, 409))
+        app.put(key, self.doc)
+        self.assertEqual(self.client.patch(path, json={"statement": "Stale", "revision": memory["revision"] + 1}).status_code, 409)
+        self.assertEqual(self.client.delete(path, params={"revision": memory["revision"] + 1}).status_code, 409)
+        self.assertEqual(self.client.delete(path, params={"revision": memory["revision"]}).status_code, 200)
+        self.assertEqual(self.submit(0, "19.62 s", first["attempt_id"]).status_code, 200)
+        with app.db() as conn:
+            conn.execute("""INSERT INTO learner_memory_pending (owner, submission_seq, diagnostic, dimension, expected_revision)
+                SELECT owner, seq, ?, ?, ? FROM quiz_submissions WHERE id=?""",
+                         (memory["diagnostic"], memory["dimension"], memory["revision"], first["attempt_id"]))
+        new = self.attempt(0, "19.62 s")
+        self.attempt(2, "42 s")
+        self.process()
+        self.assertEqual(self.restart_memories(), [])
+        self.assertEqual(self.client.get(source).status_code, 404)
+        with app.db() as conn:
+            self.assertIsNone(app.learner_memory.record(conn, memory["id"], memory["revision"]))
+        self.assertEqual(self.client.post(f"{self.base}/resume", json={"attempt_id": first["attempt_id"]}).status_code, 409)
+        response = self.client.post(f"{self.base}/resume", json={"attempt_id": new["attempt_id"]})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.process()
+        replacement, = self.memories()
+        self.assertNotEqual(replacement["id"], memory["id"])
+        self.assertEqual(replacement["status"], "tentative")
+        self.assertEqual([ref["attempt_id"] for ref in replacement["evidence"]], [new["attempt_id"]])
+        self.assertEqual(app.read(self.rid, self.tid)["progress"]["0"][0], first)
+        self.assertEqual(self.client.post(self.base, json={"kind": "preference", "statement": "Forget this preference"}).status_code, 200)
+        preference = next(m for m in self.memories() if m["kind"] == "preference")
+        self.assertEqual(self.client.delete(f"{self.base}/{preference['id']}", params={"revision": preference["revision"]}).status_code, 200)
+        self.assertNotIn(preference["id"], {m["id"] for m in self.restart_memories()})
 
 if __name__=="__main__":
     unittest.main()

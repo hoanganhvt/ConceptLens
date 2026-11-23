@@ -1,29 +1,60 @@
+import asyncio
 import json
+import logging
 import os
 import re
 import sqlite3
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 from threading import Lock
+from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictBool
 from urllib.parse import urlsplit
-from . import ai, chat_state, providers, tutor_context
+from . import ai, chat_state, learner_memory, providers, tutor_context
 from .prompt_files import prompt
 from .demo import ROAD, SAMPLE, ROAD_EN, SAMPLE_EN
 from .language import language, tr
 from .models import Roadmap, Lesson, Illustration, Motion
-from .physics import grade, motion
+from .physics import assess, motion
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(os.getenv("STUDY_DATA", ROOT / "data"))
 DATA.mkdir(exist_ok=True, parents=True)
-app = FastAPI(docs_url=None, redoc_url=None)
+
+
+@asynccontextmanager
+async def lifespan(app):
+    stop = asyncio.Event()
+
+    async def collect():
+        while not stop.is_set():
+            try:
+                await run_in_threadpool(learner_memory.process_pending, db)
+            except Exception as exc:
+                logging.getLogger(__name__).warning("Learner memory worker unavailable (%s)", type(exc).__name__)
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=1)
+            except TimeoutError:
+                pass
+
+    worker = asyncio.create_task(collect())
+    try:
+        yield
+    finally:
+        stop.set()
+        await worker
+
+
+app = FastAPI(docs_url=None, redoc_url=None, lifespan=lifespan)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost","127.0.0.1","testserver"])
 locks = [Lock() for _ in range(127)]
 
@@ -57,21 +88,33 @@ def db():
 with db() as conn:
     conn.execute("BEGIN IMMEDIATE")
     conn.execute("CREATE TABLE IF NOT EXISTS records (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-    if conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version < 1:
         chat_state.migrate(conn)
         conn.execute("PRAGMA user_version=1")
+    if version < 2:
+        learner_memory.migrate(conn)
+        conn.execute("PRAGMA user_version=2")
+
+
+def get_record(conn, key, default=None):
+    row = conn.execute("SELECT value FROM records WHERE key=?", (key,)).fetchone()
+    return json.loads(row[0]) if row else default
+
+
+def put_record(conn, key, value):
+    conn.execute("INSERT OR REPLACE INTO records VALUES (?,?)", (key, json.dumps(value, ensure_ascii=False)))
+    return value
 
 
 def get(key, default=None):
     with db() as conn:
-        row = conn.execute("SELECT value FROM records WHERE key=?", (key,)).fetchone()
-    return json.loads(row[0]) if row else default
+        return get_record(conn, key, default)
 
 
 def put(key, value):
     with db() as conn:
-        conn.execute("INSERT OR REPLACE INTO records VALUES (?,?)", (key,json.dumps(value,ensure_ascii=False)))
-    return value
+        return put_record(conn, key, value)
 
 
 def unique():
@@ -176,8 +219,14 @@ def commit(body: Roadmap):
 def read(rid:str,tid:str):
     topic_for(rid,tid)
     key = f"{rid}:{tid}"
-    return dict(doc=get("lesson:"+key),progress=get("progress:"+key,{}),notes=get("notes:"+key,[]),
-                main=get("thread:"+key+":main",[]),scroll=get("scroll:"+key,0))
+    with db() as conn:
+        conn.execute("BEGIN")
+        doc = get_record(conn, "lesson:"+key)
+        progress = get_record(conn, "progress:"+key, {})
+        if doc:
+            learner_memory.mark_eligible(conn, rid, doc, progress)
+        return dict(doc=doc, progress=progress, notes=get_record(conn, "notes:"+key, []),
+                    main=get_record(conn, "thread:"+key+":main", []), scroll=get_record(conn, "scroll:"+key, 0))
 
 
 @app.post("/api/lesson/{rid}/{tid}")
@@ -195,23 +244,137 @@ def generate(rid:str,tid:str):
 class Attempt(BaseModel):
     question:int = Field(ge=0)
     answer:str = Field(min_length=1,max_length=300)
+    attempt_id: UUID | None = None
 
 
 @app.post("/api/quiz/{rid}/{tid}")
 def quiz(rid:str,tid:str,body:Attempt):
-    doc = lesson_for(rid,tid)
-    if body.question >= len(doc["quiz"]):
-        raise HTTPException(422,tr("Không tìm thấy câu hỏi.", "Question not found."))
-    question = doc["quiz"][body.question]
-    try:
-        correct = grade(question,body.answer)
-    except ValueError as exc:
-        raise HTTPException(422,str(exc))
+    topic_for(rid, tid)
     key = f"progress:{rid}:{tid}"
-    with locks[hash(key)%len(locks)]:
-        progress = get(key,{})
-        progress.setdefault(str(body.question),[]).append(dict(answer=body.answer,correct=correct,explanation=question["explanation"]))
-        return put(key,progress)
+    attempt_id = str(body.attempt_id or uuid4())
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        doc = get_record(conn, f"lesson:{rid}:{tid}")
+        if not doc:
+            raise HTTPException(404,tr("Chưa tạo bài giảng.", "This lesson has not been generated yet."))
+        progress = get_record(conn, key, {})
+        prior = learner_memory.source(conn, attempt_id)
+        if prior:
+            same_source = tuple(prior[k] for k in ("roadmap_id", "topic_id", "lesson_version", "question"))
+            saved, _ = learner_memory.quiz_attempt(conn, prior)
+            if same_source != (rid, tid, doc["version"], body.question) or not saved or saved["answer"] != body.answer:
+                raise HTTPException(409, tr("Mã lần làm đã được dùng cho đáp án khác.", "This attempt ID already belongs to a different submission."))
+            return learner_memory.mark_eligible(conn, rid, doc, progress)
+        if body.question >= len(doc["quiz"]):
+            raise HTTPException(422,tr("Không tìm thấy câu hỏi.", "Question not found."))
+        question = doc["quiz"][body.question]
+        try:
+            correct, diagnostic, dimension = assess(question, body.answer)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        attempts = progress.setdefault(str(body.question), [])
+        learner_memory.add_submission(conn, attempt_id, rid, tid, doc["version"], body.question,
+                                      len(attempts), diagnostic, dimension)
+        attempts.append(dict(answer=body.answer, correct=correct, explanation=question["explanation"], attempt_id=attempt_id))
+        put_record(conn, key, progress)
+        return learner_memory.mark_eligible(conn, rid, doc, progress)
+
+
+def memory_road_title(rid):
+    try:
+        return road_for(rid)["title"]
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        return None
+
+
+class MemoryText(BaseModel):
+    statement: str = Field(min_length=1, max_length=2000)
+
+
+class NewMemory(MemoryText):
+    kind: Literal["goal", "preference"]
+
+
+class EditMemory(MemoryText):
+    revision: int = Field(ge=1, strict=True)
+
+
+class MemoryCapture(BaseModel):
+    enabled: StrictBool
+
+
+class ResumeMemory(BaseModel):
+    attempt_id: UUID
+
+
+def memory_statement(body):
+    text = body.statement.strip()
+    if not text:
+        raise HTTPException(422, tr("Hãy nhập nội dung bộ nhớ.", "Enter the memory text."))
+    return text
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path == "/api/memories" or request.url.path.startswith("/api/memories/"):
+        return JSONResponse({"detail": tr("Dữ liệu bộ nhớ không hợp lệ.", "Invalid learner memory input.")}, 422)
+    return await request_validation_exception_handler(request, exc)
+
+
+@app.get("/api/memories")
+def memories():
+    with db() as conn:
+        conn.execute("BEGIN")
+        return learner_memory.list_memories(conn, memory_road_title)
+
+
+@app.post("/api/memories")
+def create_memory(body: NewMemory):
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        learner_memory.create(conn, body.kind, memory_statement(body))
+        return learner_memory.list_memories(conn, memory_road_title)
+
+
+@app.put("/api/memories/capture")
+def capture_memory(body: MemoryCapture):
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        learner_memory.set_enabled(conn, body.enabled)
+        return learner_memory.list_memories(conn, memory_road_title)
+
+
+@app.post("/api/memories/resume")
+def resume_memory(body: ResumeMemory):
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        learner_memory.resume(conn, str(body.attempt_id))
+        return learner_memory.list_memories(conn, memory_road_title)
+
+
+@app.patch("/api/memories/{memory_id}")
+def edit_memory(memory_id: str, body: EditMemory):
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        learner_memory.edit(conn, memory_id, body.revision, memory_statement(body))
+        return learner_memory.list_memories(conn, memory_road_title)
+
+
+@app.delete("/api/memories/{memory_id}")
+def forget_memory(memory_id: str, revision: int = Query(ge=1)):
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        learner_memory.forget(conn, memory_id, revision)
+        return learner_memory.list_memories(conn, memory_road_title)
+
+
+@app.get("/api/memories/{memory_id}/evidence/{attempt_id}")
+def read_memory_evidence(memory_id: str, attempt_id: UUID):
+    with db() as conn:
+        conn.execute("BEGIN")
+        return learner_memory.evidence_detail(conn, memory_id, str(attempt_id))
 
 
 class Anchor(BaseModel):

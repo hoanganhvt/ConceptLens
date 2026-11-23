@@ -1,80 +1,71 @@
 # ConceptLens
 
-ConceptLens is a personal AI tutor for learning. It runs on your Windows PC and opens in a browser. Start with a question, work through a short illustrated lesson, and check your reasoning with a quiz or a Python simulation. The built-in free-fall lesson works before you connect an AI provider.
+ConceptLens is a local-first personal AI tutor for Windows. Build a course, learn from illustrated lessons, try simulations, and ask focused questions without leaving the reader. Use the app in English or Vietnamese.
 
-## Quick start on Windows
+![ConceptLens showing the free-fall lesson, an interactive graph, and the right-side tutor panel on desktop](documents/screenshots/conceptlens.png)
 
-Install Python 3.12 with the Windows `py` launcher and Node.js 22.12 or later with npm. Open PowerShell in the project directory and run:
+*The built-in Free fall lesson at 2 seconds, with an example conversation in the tutor panel.*
 
-```powershell
+## Quick start
+
+Install Python 3.12 with the Windows `py` launcher and Node.js 22.12 or later with npm. From the project directory, run:
+
+~~~powershell
 .\start.cmd
-```
+~~~
 
-On first launch, the script creates a Python virtual environment, installs dependencies, builds the frontend, and starts FastAPI on the loopback interface. The first installation requires internet access. Open [ConceptLens on localhost](http://127.0.0.1:8765/). Keep the terminal open while studying and press `Ctrl+C` to stop the server.
+Open [ConceptLens on localhost](http://127.0.0.1:8765/). The first run installs dependencies and builds the reader. Keep the terminal open while studying and press `Ctrl+C` to stop the server.
 
-Choose **English** or **Tiếng Việt** in the header. ConceptLens remembers the language in this browser and uses it for new roadmaps, lessons, and tutor replies. Each language has its own free-fall sample and progress. Saved custom courses stay in their original language.
+The built-in Free fall lesson works before you configure a provider. Set its time slider to **2 s**. With the default acceleration and initial velocity, the marble falls **19.62 m**. Enter `1962 cm` in the quiz to try grading with equivalent units.
 
-**Try the sample.** In the free-fall lesson, set the time to 2 seconds. With zero initial velocity and an acceleration of 9.81 m/s², the object has fallen 19.62 m. Try entering `1962 cm` in the quiz. Python checks both the value and its unit.
+## What you can do
 
-## Connect an AI provider
+- **Plan a course.** Draft a roadmap from a subject, learning goal, level, and schedule. Review and revise the draft before confirming it. Create a new version when you want to revise a confirmed roadmap.
+- **Explore illustrated lessons.** Generate and reopen lessons with worked examples, interactive visuals, and quizzes. The lesson prompt asks for at least two illustrated examples per concept. Move through an event with a slider, or use the motion lab's playback, initial conditions, and position and velocity graphs. Lesson, quiz, and tutor formulas render as LaTeX.
+- **Ask the tutor.** Open the collapsible panel on the right. Each new question starts a thread, and the current lesson's saved questions reopen with their full conversations. Select a passage or illustration caption to create a separate highlight thread. A simulation highlight keeps the values shown when you selected it. The tutor is prompted to give a short, direct answer in plain words. It can run Python calculations and simulations, and return source links for web lookups.
+- **Check your understanding.** Answer choice questions or submit a number with units. Grading and feedback work locally, and the app saves quiz attempts, reading position, and motion settings.
+- **Manage learner memory.** In **Settings**, turn capture on to save goals and preferences and track recurring unit mistakes. Two distinct quiz questions in the same roadmap must support the same unit diagnosis before it becomes recurring. Inspect the original answers, edit or forget a memory, and pause capture while keeping saved memories available for review. Forgetting a memory leaves the original quiz and chat history available.
 
-Open **Settings** in the upper-right corner, choose an AI source, and save. Your selection applies to the next AI request, including questions in an existing highlight conversation.
+## AI providers
 
-| Source | Setup | Model selection |
-| --- | --- | --- |
-| OpenAI API | Enter an API key in Settings, or set `OPENAI_API_KEY` in the environment that starts the backend. A saved key takes precedence. Windows encrypts saved keys for the current user with DPAPI. | Set `OPENAI_MODEL` before starting the backend. The default is `gpt-4.1`. Choose a model that supports structured output, function calls, and web search. |
-| Codex CLI | Install the CLI on the backend's `PATH`. Run `codex login` from the same Windows account that runs ConceptLens, then verify with `codex login status`. | Pick a model in Settings or keep the CLI default. ConceptLens reads the CLI model catalog and passes an explicit selection to `codex exec --model`. |
+Open **Settings**, select a provider, and save. The selection applies to the next generation or tutor request, including follow-ups in saved threads. Roadmap drafting, lesson generation, illustration repair, and tutor replies use the chosen provider. Saved lessons, simulations, and quiz grading run locally.
 
-The Codex integration uses non-interactive execution with `--ephemeral`, `--ignore-user-config`, and `--output-schema`. Generating roadmaps, lessons, illustrations, repairs, or tutor replies requires a working provider connection. The saved lesson, simulation controls, and quiz grading run locally.
+| Provider | Setup |
+| --- | --- |
+| **OpenAI API** | Enter a key in Settings or set `OPENAI_API_KEY` before launch. A saved key takes precedence and Windows protects it with DPAPI. Set `OPENAI_MODEL` before launch to override the default `gpt-4.1`. |
+| **Codex CLI** | Install the CLI on the server's `PATH`. Run `codex login` and check `codex login status` in the same Windows account and terminal that starts ConceptLens. Choose a model in Settings or use the CLI default. |
 
-## Study workflow
+### Tutor context and learner memory
 
-1. **Plan a course.** Enter a subject, current level, goal, and available study time. Review the proposed chapters, request changes, then confirm the roadmap. To revise a confirmed course, create a new version.
-2. **Open a lesson.** The tutor generates the explanation, worked example, interactive illustrations, and quiz together. Reopening a saved lesson loads the same material.
-3. **Explore the illustration.** Predict what will happen, adjust a control, and compare the result with your prediction. The motion lab lets you vary acceleration, initial velocity, and duration, then inspect position and velocity over time.
-4. **Ask about a passage.** Select text in a lesson paragraph or illustration caption to open a separate conversation. A selection on a simulation caption captures the simulation values at that moment. Click the highlight later to continue the same thread.
-5. **Check your understanding.** Submit a choice or a numerical answer with units to see feedback. In tutor chat, ask for a calculation or enable web search to get linked sources.
+To enable bounded tutor context, set `STUDY_BOUNDED_CONTEXT=1` before launching. This mode packs the current question, relevant lesson and highlight evidence, recent turns, and a summary of older turns into a configurable input budget. The reader keeps the full transcript. Set `STUDY_TUTOR_CONTEXT_WINDOW` for a common window or `STUDY_TUTOR_MODEL_WINDOWS` for model-specific overrides. [Phase 1 architecture](documents/phase-1-architecture.md) · [Verification](result/phase-1.md)
+
+Learner memory capture is off by default and is enabled separately in Settings. The local memory worker processes quiz evidence without provider calls. Tutor replies currently use the active lesson and conversation branch. [Phase 2 architecture](documents/phase-2-architecture.md) · [Verification](result/phase-2.md)
 
 ## Data and backups
 
 | Location | Contents |
 | --- | --- |
-| `data/<roadmap-id>/roadmap.json` | A confirmed roadmap with stable topic IDs. Each version has its own directory. |
-| `data/study.sqlite` | Generated lessons and illustrations, quiz attempts, highlights, chat threads, reading positions, simulation state, and provider settings. |
+| `data/<roadmap-id>/roadmap.json` | Confirmed roadmaps with stable topic IDs. |
+| `data/study.sqlite` | Generated lessons, quiz attempts, highlights, tutor threads and summaries, reading position, motion state, provider settings, and learner memory. |
 
-To back up your work, stop the server and copy the entire `data` directory. To restore it, place the copy in the data location before starting ConceptLens. Set `STUDY_DATA` before launch to choose a different directory. A saved API key is tied to its Windows user context and may need to be entered again after a restore.
+Stop the server and copy the entire `data` directory to back up your study history. Restore it to the study-data location before relaunching. Set `STUDY_DATA` before launch to use a different directory. A saved API key is tied to the Windows user who saved it.
 
-Content is stored locally. For an AI request, the backend sends the relevant learning context and conversation to the selected provider. Highlight threads have their own history. The web-search option also requests online sources.
+The backend sends the relevant context to the provider when you request AI help. Web lookups use the tutor's search option.
 
-## Development
+## Development and verification
 
-| Path | Responsibility |
-| --- | --- |
-| [src/](src/) | React and TypeScript reader, quizzes, settings, highlight conversations, and simulation controls |
-| [backend/](backend/) | FastAPI routes, SQLite persistence, AI providers, numerical tools, and unit-aware grading |
-| [prompts/](prompts/) | English instructions for roadmaps, lessons, illustrations, tutoring, tools, and provider context |
-| [tests/](tests/) | Python regression tests and a Playwright browser smoke test |
+The reader uses React, TypeScript, and KaTeX. FastAPI handles routes and SQLite storage, and Pint checks units. Generated visuals run in a sandboxed iframe. See the [lesson prompt](prompts/lessons/generate.md), [illustration contract](prompts/illustrations/contract.md), and [tutor instructions](prompts/tutor/instructions.md) to change teaching behavior.
 
-**Edit teaching behavior.** Start with [the lesson prompt](prompts/lessons/generate.md) for writing style or [the illustration contract](prompts/illustrations/contract.md) for visual behavior. Prompt files use UTF-8 and are read at request time. Edits apply to newly generated content. Learner-facing text is Vietnamese.
+Run these commands from the project directory after setup:
 
-**Work on illustrations.** Each visual contains filtered HTML or SVG, limited CSS, and an ES5 `render(t,s,v,k)` function. The browser runs it with JS-Interpreter inside a sandboxed iframe. The drawing can use `text(id,value)` and `attr(id,name,value)`. For motion lessons, Python computes the time series shared by the drawing and the chart. If rendering fails, the app attempts one automatic repair and offers a manual retry alongside the written explanation.
-
-**Build and test.** From the project directory after setup, run:
-
-```powershell
+~~~powershell
 npm.cmd run build
 .\.venv\Scripts\python.exe -m unittest discover -s tests
 npm.cmd run test:ui
-```
+.\.venv\Scripts\python.exe tests/evals/runner.py --output "$env:TEMP\conceptlens-evals"
+.\.venv\Scripts\python.exe tests/evals/runner.py --bounded --output "$env:TEMP\conceptlens-evals"
+~~~
 
-The build type-checks the frontend and writes the static site to `dist/`. Rebuild after frontend changes and restart the server after Python changes. The browser test starts an isolated backend with temporary study data and requires Chrome or Chromium. Set `CHROME_PATH` to the browser executable if it is installed in a custom location. The tests do not require a paid model call.
+The browser test uses an isolated study-data directory and requires Chrome or Chromium. Set `CHROME_PATH` if the browser is installed in a custom location. The replay commands use scripted providers and run without credentials. [Baseline verification](result/phase-0.md)
 
-## Troubleshooting
-
-| Symptom | What to check |
-| --- | --- |
-| Port 8765 is in use | Open the local URL first. An instance may already be running. Stop that instance before starting another on the same port. |
-| The CLI says you are signed in, but Settings says you are signed out | Start `start.cmd` in the same Windows account and terminal environment where `codex login status` succeeds. Check `CODEX_HOME` if you use a custom CLI profile directory. |
-| A frontend change is missing | Run `npm.cmd run build` and refresh the browser. The launcher reuses an existing build. |
-| An API key or model change is missing | Save changes made in Settings. For changes made to environment variables, restart the backend from the terminal containing the new values. |
-
+Rebuild after frontend changes and restart the server after backend changes. If port 8765 is occupied, check whether ConceptLens is already running there.

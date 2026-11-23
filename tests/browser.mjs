@@ -1,5 +1,5 @@
 import {chromium} from 'playwright-core';
-import {spawn} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {existsSync, mkdtempSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
@@ -13,7 +13,16 @@ const port=portFinder.address().port;
 await new Promise(resolve=>portFinder.close(resolve));
 const base='http://127.0.0.1:'+port;
 const py=process.platform==='win32'?'.venv/Scripts/python.exe':'.venv/bin/python';
-const server=spawn(py,['-m','uvicorn','backend.main:app','--port',String(port)],{env:{...process.env,STUDY_DATA:mkdtempSync(join(tmpdir(),'study-ui-')),OPENAI_API_KEY:''},stdio:['ignore','ignore','inherit']});
+const env={...process.env,STUDY_DATA:mkdtempSync(join(tmpdir(),'study-ui-')),OPENAI_API_KEY:''};
+const seeded=spawnSync(py,['-c',`
+from backend import main
+key = 'lesson:physics:free-fall'
+doc = main.get(key)
+doc['quiz'].append(dict(kind='number', prompt='What is the second distance?', choices=[], answer='42 m', explanation='42 metres.'))
+main.put(key, doc)
+`],{env,encoding:'utf8'});
+assert.equal(seeded.status,0,seeded.stderr||String(seeded.error||''));
+const server=spawn(py,['-m','uvicorn','backend.main:app','--port',String(port)],{env,stdio:['ignore','ignore','inherit']});
 const executablePath=process.env.CHROME_PATH||['C:/Program Files/Google/Chrome/Application/chrome.exe','/usr/bin/google-chrome','/usr/bin/chromium'].find(existsSync);
 let browser;
 try{
@@ -191,8 +200,110 @@ try{
   assert.equal(await tutor.locator('.msg').count(),4);
   await tutor.press('Escape');
   await tutor.waitFor({state:'hidden'});
+  const englishSettings=page.getByRole('button',{name:'Settings',exact:true});
+  const memoryDialog=page.getByRole('dialog');
+  const memoryList=async()=>{
+    const response=await fetch(base+'/api/memories',{headers:{'X-Study-Language':'en'}});
+    assert.ok(response.ok);
+    return response.json();
+  };
+  const waitForMemory=async status=>{
+    for(let i=0;i<100;i++){
+      const entry=(await memoryList()).memories.find(m=>m.status===status);
+      if(entry)return entry;
+      await new Promise(resolve=>setTimeout(resolve,100));
+    }
+    assert.fail(`No learner memory reached status ${status}`);
+  };
+
+  await englishSettings.click();
+  await memoryDialog.getByRole('heading',{name:'Learner memory',exact:true}).waitFor();
+  const capture=memoryDialog.getByRole('checkbox',{name:'Enable learner memory'});
+  assert.equal(await capture.isChecked(),false);
+  await capture.focus();
+  await page.keyboard.press('Space');
+  await memoryDialog.getByLabel('Memory type').selectOption('goal');
+  const memoryText=memoryDialog.getByRole('textbox',{name:/^Memory text/});
+  await memoryText.fill('Practice converting units');
+  let saves=0;
+  await page.route('**/api/memories',route=>{
+    if(route.request().method()==='POST'&&saves++===0)
+      return route.fulfill({status:502,json:{detail:'Memory save interrupted.'}});
+    return route.continue();
+  });
+  await memoryDialog.getByRole('button',{name:'Save memory',exact:true}).click();
+  await memoryDialog.getByRole('alert').filter({hasText:'Memory save interrupted.'}).waitFor();
+  assert.equal(await memoryText.inputValue(),'Practice converting units');
+  await memoryDialog.getByRole('button',{name:'Save memory',exact:true}).click();
+  await memoryDialog.getByText('Practice converting units',{exact:true}).waitFor();
+  await page.unroute('**/api/memories');
+  await memoryDialog.getByLabel('Memory type').selectOption('preference');
+  await memoryText.fill('Show the conversion step');
+  await memoryDialog.getByRole('button',{name:'Save memory',exact:true}).click();
+  await memoryDialog.getByText('Show the conversion step',{exact:true}).waitFor();
+  await memoryDialog.getByRole('button',{name:'Close',exact:true}).click();
+
+  const quizPath='**/api/quiz/physics/free-fall';
+  const attempts=[];
+  await page.route(quizPath,async route=>{
+    attempts.push(route.request().postDataJSON());
+    const response=await route.fetch();
+    assert.ok(response.ok());
+    if(attempts.length===1)await route.fulfill({status:502,json:{detail:'Quiz response lost.'}});
+    else await route.fulfill({response});
+  });
+  const firstDistance=page.locator('#quiz form').first();
+  await firstDistance.getByLabel('Answer and unit').fill('19.62 s');
+  await firstDistance.getByRole('button',{name:'Check answer'}).click();
+  await page.getByRole('alert').filter({hasText:'Quiz response lost.'}).waitFor();
+  assert.equal(await firstDistance.getByLabel('Answer and unit').inputValue(),'19.62 s');
+  await firstDistance.getByRole('button',{name:'Check answer'}).click();
+  await firstDistance.getByText('Try again.',{exact:true}).waitFor();
+  assert.match(attempts[0].attempt_id,/^[0-9a-f-]{36}$/);
+  assert.deepEqual(attempts[0],attempts[1]);
+  await page.unroute(quizPath);
+  const secondDistance=page.locator('#quiz form').filter({hasText:'What is the second distance?'});
+  await secondDistance.getByLabel('Answer and unit').fill('42 s');
+  await secondDistance.getByRole('button',{name:'Check answer'}).click();
+  await secondDistance.getByText('Try again.',{exact:true}).waitFor();
+  const recurring=await waitForMemory('recurring');
+  assert.equal(recurring.evidence.length,2);
+  await englishSettings.click();
+  await memoryDialog.getByRole('button',{name:'View attempt 1',exact:true}).click();
+  await memoryDialog.getByText('19.62 s',{exact:false}).waitFor();
+  await memoryDialog.getByRole('button',{name:'View attempt 2',exact:true}).click();
+  await memoryDialog.getByText('42 s',{exact:false}).waitFor();
+  const mistake=memoryDialog.locator('article').filter({hasText:recurring.statement});
+  await mistake.getByRole('button',{name:'Edit memory',exact:true}).click();
+  await mistake.getByRole('textbox',{name:/^Edited memory/}).fill('Review dimensional compatibility first');
+  await mistake.getByRole('button',{name:'Save changes',exact:true}).click();
+  await memoryDialog.getByText('Review dimensional compatibility first',{exact:true}).waitFor();
+  const [pauseResponse]=await Promise.all([
+    page.waitForResponse(response=>response.url().endsWith('/api/memories/capture')&&response.request().method()==='PUT'),
+    capture.press('Space'),
+  ]);
+  assert.ok(pauseResponse.ok());
+  await page.reload();
+  await englishSettings.click();
+  await memoryDialog.getByText('Review dimensional compatibility first',{exact:true}).waitFor();
+  assert.equal(await capture.isChecked(),false);
+  await memoryDialog.getByRole('button',{name:'Close',exact:true}).click();
+
   await page.getByLabel('Language').selectOption('vi');
   await page.getByRole('heading',{name:'Sự rơi tự do',exact:true}).waitFor();
-  console.log('Browser checks passed: illustration, grading, LaTeX, highlights, conversation history, tutor panel, API settings and mobile width.');
+  await settingsButton.click();
+  await memoryDialog.getByRole('heading',{name:'Bộ nhớ học tập',exact:true}).waitFor();
+  assert.equal(await memoryDialog.getByRole('checkbox',{name:'Bật bộ nhớ học tập'}).isChecked(),false);
+  await memoryDialog.getByText('Practice converting units',{exact:true}).waitFor();
+  await memoryDialog.getByText('Show the conversion step',{exact:true}).waitFor();
+  const corrected=memoryDialog.locator('article').filter({hasText:'Review dimensional compatibility first'});
+  await corrected.getByRole('button',{name:'Xem lần làm 1',exact:true}).click();
+  await corrected.getByText('19.62 s',{exact:false}).waitFor();
+  await corrected.getByRole('button',{name:'Quên bộ nhớ',exact:true}).click();
+  await corrected.getByRole('button',{name:'Xác nhận quên',exact:true}).click();
+  await corrected.waitFor({state:'detached'});
+  const original=await (await fetch(base+'/api/lesson/physics/free-fall')).json();
+  assert.equal(original.progress['0'].filter(item=>item.attempt_id===attempts[0].attempt_id).length,1);
+  console.log('Browser checks passed: illustration, grading, LaTeX, highlights, conversation history, tutor panel, API settings, learner memory and mobile width.');
 }finally{await browser?.close();server.kill()}
 
