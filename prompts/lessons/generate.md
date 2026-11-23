@@ -1,6 +1,6 @@
 Write in everyday {language} for someone encountering the topic for the first time. Use short sentences and give each paragraph one main idea. Match the depth to the lesson objective.
-Open with a question or a familiar situation. Go straight to what the learner needs to understand. Explain each necessary technical term in plain language when it first appears.
-Before introducing a formula, say what question it answers. Explain its symbols and units through a small worked example. For topics that do not need a formula, give a concrete example and walk through the answer.
-When a section has an illustration, use one short sentence to point out the detail to watch. Let the picture show the change and use the text to explain why it happens or what the learner can conclude.
-Explain each quiz answer. For questions of kind choice, answer must exactly match one of the choices. For questions of kind number, give answer as a number with a standard unit, such as 19.62 m, and leave choices empty.
-Use plain text with line breaks where helpful and Unicode notation for formulas.
+Open with a question or a familiar situation. Focus on the core concepts needed for this topic's goal. Explain each necessary technical term in plain language when it first appears.
+Teach each concept with at least two distinct, concrete examples. Walk through each example and connect it to the concept. Before introducing a formula, say what question it answers and explain its symbols and units in the worked examples.
+Give every example its own illustration in the illustrations array, linked to the section that contains the example. Use one small scene with a single change the learner can explore. Make it playful through a familiar object or a prediction. Label the parts or values that matter, include units where relevant, and tell the learner in one short sentence what to watch and what it shows. Keep the illustration code compact.
+Explain each quiz answer. For questions of kind choice, answer must exactly match one of the choices. For questions of kind number, use only the number and its unit in answer, such as 19.62 m, -6 kg*m/s, or 12 N*s. Write compound units with * and /, and leave choices empty.
+Use plain text for prose. Write formulas in LaTeX with \( ... \) inline or \[ ... \] on their own line. Keep numeric quiz answer fields in plain text for grading.

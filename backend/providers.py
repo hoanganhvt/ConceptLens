@@ -1,7 +1,10 @@
+from contextlib import nullcontext
+
 from .language import tr
 import base64
 import ctypes
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -11,8 +14,11 @@ from typing import Literal
 from .prompt_files import prompt
 
 from fastapi import HTTPException
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, ValidationError
 from openai.lib._pydantic import to_strict_json_schema
+
+
+log = logging.getLogger("uvicorn.error").getChild("providers")
 
 
 class SettingsUpdate(BaseModel):
@@ -106,7 +112,39 @@ def public_settings(record):
                 codex_model=record.get("codex_model"), codex_models=codex_models(executable))
 
 
-def codex_result(schema, instructions, context, search=False, *, model=None):
+def codex_request(schema, instructions, context):
+    schema_text = json.dumps(to_strict_json_schema(schema))
+    prefix = instructions + "\n\n" + prompt("providers/codex-context") + "\n"
+    return schema_text, prefix + codex_context(context)
+
+
+def codex_context(context):
+    return json.dumps(context, ensure_ascii=False)
+
+
+def codex_overhead(schema, instructions):
+    schema_text, stdin = codex_request(schema, instructions, {})
+    return len(schema_text.encode()) + len(stdin.encode()) - 2
+
+
+def validation_issues(error):
+    issues = error.errors(include_url=False, include_context=False, include_input=False)
+    return ", ".join(
+        f"{'.'.join(map(str, issue['loc'])) or 'root'} ({issue['type']})" for issue in issues[:5]
+    )
+
+
+def codex_result(schema, instructions, context, search=False, *, model=None, budget=None, renew=None, kind="tutor"):
+    schema_text, prompt_text = codex_request(schema, instructions, context)
+    size = len(schema_text.encode()) + len(prompt_text.encode())
+    measurement = budget.measure(size, kind) if budget else nullcontext({})
+    with measurement as usage:
+        if renew:
+            renew()
+        return run_codex(schema, schema_text, prompt_text, search, model, usage)
+
+
+def run_codex(schema, schema_text, prompt_text, search, model, usage):
     exe = shutil.which("codex")
     status = cli_status(exe)
     if status == "missing":
@@ -115,14 +153,13 @@ def codex_result(schema, instructions, context, search=False, *, model=None):
         raise HTTPException(503, tr("Chạy codex login trên máy này rồi thử lại.", "Run codex login on this machine and try again."))
     with tempfile.TemporaryDirectory(prefix="study-codex-") as folder:
         schema_file = Path(folder) / "schema.json"
-        schema_file.write_text(json.dumps(to_strict_json_schema(schema)),encoding="utf-8")
+        schema_file.write_text(schema_text, encoding="utf-8")
         args = [exe, "-a", "never", "-c", 'web_search="'+("live" if search else "disabled")+'"',
                 "-c", "features.shell_tool=false", "exec", "--ignore-user-config", "--ephemeral",
                 "--skip-git-repo-check", "--sandbox", "read-only", "--json", "--output-schema", str(schema_file)]
         if model:
             args.extend(["--model", model])
         args.append("-")
-        prompt_text = instructions+"\n\n"+prompt("providers/codex-context")+"\n"+json.dumps(context,ensure_ascii=False)
         try:
             result = subprocess.run(args,input=prompt_text,encoding="utf-8",errors="replace",capture_output=True,
                                     timeout=180,cwd=folder,env=cli_environment(),
@@ -132,13 +169,21 @@ def codex_result(schema, instructions, context, search=False, *, model=None):
         except OSError:
             raise HTTPException(503,tr("Không khởi chạy được Codex CLI.", "Could not start Codex CLI."))
         if result.returncode:
+            log.warning("Codex CLI failed for %s with exit code %d", schema.__name__, result.returncode)
             raise HTTPException(502,tr("Codex CLI gặp lỗi. Kiểm tra đăng nhập, phiên bản CLI và hạn mức rồi thử lại.", "Codex CLI failed. Check your sign-in, CLI version, and quota, then try again."))
         try:
             events = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+            for event in events:
+                if event.get("type") == "turn.completed":
+                    reported = event.get("usage") or {}
+                    usage.update({key: value for key, value in reported.items()
+                                  if key in ("input_tokens", "output_tokens") and type(value) is int})
             items = [event["item"] for event in events if event.get("type")=="item.completed"]
             if search and not any(item["type"]=="web_search" for item in items):
                 raise HTTPException(502,tr("Codex chưa tra cứu được web. Hãy thử lại.", "Codex could not search the web. Please try again."))
             message = next(item["text"] for item in reversed(items) if item["type"]=="agent_message")
             return schema.model_validate_json(message).model_dump()
         except (ValueError, KeyError, StopIteration) as exc:
+            detail = validation_issues(exc) if isinstance(exc, ValidationError) else type(exc).__name__
+            log.warning("Codex CLI returned invalid %s output: %s", schema.__name__, detail)
             raise HTTPException(502,tr("Codex CLI chưa trả về nội dung hợp lệ. Hãy thử lại.", "Codex CLI returned invalid content. Please try again.")) from exc

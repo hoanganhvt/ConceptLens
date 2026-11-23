@@ -2,14 +2,14 @@ import {tr, language} from './language';
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Lab} from './Lab';
+import {formulas,renderMath,sourceText} from './math';
 import {api,type Road,type Bundle,type Topic,type Anchor,type Msg,type Progress} from './types';
 import './style.css';
 
-function Dialog({title,children,close,pop}:{title:string,children:React.ReactNode,close:()=>void,pop?:{x:number,y:number}}){
+function Dialog({title,children,close}:{title:string,children:React.ReactNode,close:()=>void}){
   const ref=useRef<HTMLDialogElement>(null);
   useEffect(()=>{const d=ref.current!;const origin=document.activeElement as HTMLElement;d.showModal();return()=>{d.close();origin?.focus({preventScroll:true})}},[]);
-  const style=pop?{margin:0,left:Math.max(8,Math.min(pop.x,innerWidth-Math.min(440,innerWidth-16)-8)),top:Math.max(8,Math.min(pop.y+8,innerHeight-Math.min(490,innerHeight-16)-8))}:undefined;
-  return <dialog ref={ref} aria-label={title} className={pop?'popup':''} style={style} onCancel={e=>{e.preventDefault();close()}}><header><h2>{title}</h2><button aria-label={tr("Đóng", "Close")} onClick={close}>×</button></header>{children}</dialog>
+  return <dialog ref={ref} aria-label={title} onCancel={e=>{e.preventDefault();close()}}><header><h2>{title}</h2><button aria-label={tr("Đóng", "Close")} onClick={close}>×</button></header>{children}</dialog>
 }
 
 function Planner({base,done,close}:{base:Road|null,done:(r:Road)=>void,close:()=>void}){
@@ -22,27 +22,100 @@ function Planner({base,done,close}:{base:Road|null,done:(r:Road)=>void,close:()=
 }
 
 function Cited({msg}:{msg:Msg}){
-  const text=Array.from(msg.text), parts:React.ReactNode[]=[];let last=0;
+  const text=Array.from(msg.text), parts:React.ReactNode[]=[];
+  const math=[...formulas(msg.text)].map(match=>[
+    Array.from(msg.text.slice(0,match.index)).length,
+    Array.from(msg.text.slice(0,match.index+match[0].length)).length
+  ]);
+  let last=0;
   for(const [i,s] of [...(msg.sources||[])].sort((a,b)=>a.end-b.end).entries()){
-    const end=Math.min(text.length,Math.max(last,s.end));parts.push(text.slice(last,end).join(''),<a key={i} href={s.url} target="_blank" rel="noreferrer" title={s.title}> [{s.title||tr("Nguồn", "Source")}] </a>);last=end;
+    let end=Math.min(text.length,Math.max(last,s.end));
+    end=math.find(([start,finish])=>start<end&&end<finish)?.[1]??end;
+    parts.push(<React.Fragment key={i}>{renderMath(text.slice(last,end).join(''))}<a href={s.url} target="_blank" rel="noreferrer" title={s.title}> [{s.title||tr("Nguồn", "Source")}] </a></React.Fragment>);
+    last=end;
   }
-  return <>{parts}{text.slice(last).join('')}</>
+  return <>{parts}{renderMath(text.slice(last).join(''))}</>
 }
-function Chat({path,initial=[]}:{path:string,initial?:Msg[]}){
-  const [history,setHistory]=useState<Msg[]>(initial),[text,setText]=useState(''),[search,setSearch]=useState(false),[busy,setBusy]=useState(false),[err,setErr]=useState(''),[loaded,setLoaded]=useState(false);
+type TutorThread={id:string,question:string};
+
+function Chat({path,onSaved}:{path:string,onSaved:(history:Msg[])=>void}){
+  const [history,setHistory]=useState<Msg[]>([]),[text,setText]=useState(''),[search,setSearch]=useState(false),[busy,setBusy]=useState(false),[err,setErr]=useState(''),[loaded,setLoaded]=useState(false);
+  const messages=useRef<HTMLDivElement>(null);
+  const pending=useRef<{path:string,text:string,search:boolean,request_id:string}|null>(null);
   useEffect(()=>{let live=true;api<Msg[]>('chat/'+path).then(x=>{if(live)setHistory(x)}).catch(e=>{if(live)setErr(String(e))}).finally(()=>{if(live)setLoaded(true)});return()=>{live=false}},[path]);
-  return <><div className="history" aria-live="polite">{history.map((m,i)=><div className={'msg '+m.role} key={i}><b>{m.role==='user'?tr("Bạn", "You"):tr("Gia sư", "Tutor")}</b><p><Cited msg={m}/></p>{!!m.traces?.length&&<details><summary>{tr("Phép kiểm chứng Python", "Python calculations")}</summary><pre>{JSON.stringify(m.traces,null,2)}</pre></details>}</div>)}</div>
-  <form onSubmit={async e=>{e.preventDefault();if(!text.trim()||busy)return;setBusy(true);setErr('');try{setHistory(await api<Msg[]>('chat/'+path,{text,search}));setText('')}catch(e){setErr(String(e))}finally{setBusy(false)}}}>
-  <label>{tr("Câu hỏi của bạn", "Your question")}<textarea required value={text} onChange={e=>setText(e.target.value)} placeholder={tr("Bạn muốn hiểu rõ điều gì?", "What would you like to understand?")}/></label><div className="actions"><label className="inline"><input type="checkbox" checked={search} onChange={e=>setSearch(e.target.checked)}/>{tr("Tra cứu web", "Search the web")}</label><button className="primary" disabled={!loaded||busy}>{busy?tr("Đang trả lời…", "Thinking…"):tr("Gửi câu hỏi", "Send question")}</button></div>{err&&<p role="alert">{err}</p>}</form></>
+  async function submit(event:React.FormEvent){
+    event.preventDefault();
+    if(!loaded||!text.trim()||busy)return;
+    if(pending.current?.path!==path||pending.current.text!==text||pending.current.search!==search)
+      pending.current={path,text,search,request_id:crypto.randomUUID()};
+    const {request_id}=pending.current;
+    setBusy(true);
+    setErr('');
+    try{
+      const next=await api<Msg[]>('chat/'+path,{text,search,request_id});
+      setHistory(next);
+      onSaved(next);
+      pending.current=null;
+      setText('');
+    }catch(e){setErr(String(e))}finally{setBusy(false)}
+  }
+  useEffect(()=>{if(messages.current)messages.current.scrollTop=messages.current.scrollHeight},[history]);
+  return <><div ref={messages} className="history" aria-live="polite">{history.map((m,i)=><div className={'msg '+m.role} key={i}><b>{m.role==='user'?tr("Bạn", "You"):tr("Gia sư", "Tutor")}</b><p><Cited msg={m}/></p>{!!m.traces?.length&&<details><summary>{tr("Phép kiểm chứng Python", "Python calculations")}</summary><pre>{JSON.stringify(m.traces,null,2)}</pre></details>}</div>)}</div>
+  <form onSubmit={submit}>
+  <label>{tr("Câu hỏi của bạn", "Your question")}<textarea required disabled={busy} value={text} onChange={e=>setText(e.target.value)} placeholder={tr("Bạn muốn hiểu rõ điều gì?", "What would you like to understand?")}/></label><div className="actions"><label className="inline"><input type="checkbox" disabled={busy} checked={search} onChange={e=>setSearch(e.target.checked)}/>{tr("Tra cứu web", "Search the web")}</label><button className="primary" disabled={!loaded||busy}>{busy?tr("Đang trả lời…", "Thinking…"):tr("Gửi câu hỏi", "Send question")}</button></div>{err&&<p role="alert">{err}</p>}</form></>
+}
+
+function newThread(){return 'question-'+crypto.randomUUID().replaceAll('-','')}
+
+function TutorPanel({path,open,close,branch,setBranch,note}:{path:string,open:boolean,close:()=>void,branch:string,setBranch:(id:string)=>void,note?:Anchor}){
+  const [threads,setThreads]=useState<TutorThread[]>([]),[error,setError]=useState('');
+  const panel=useRef<HTMLElement>(null);
+  const saves=useRef(0);
+  useEffect(()=>{
+    if(!open)return;
+    panel.current?.focus({preventScroll:true});
+    let live=true;
+    const revision=saves.current;
+    api<TutorThread[]>('chat/'+path).then(list=>{
+      if(live){
+        setThreads(current=>revision===saves.current?list:[...current,...list.filter(item=>!current.some(thread=>thread.id===item.id))]);
+        setError('');
+      }
+    })
+      .catch(err=>{if(live)setError(String(err))});
+    return()=>{live=false};
+  },[path,open]);
+  function saved(history:Msg[]){
+    const question=history.find(msg=>msg.role==='user')?.text.trim().slice(0,180);
+    if(question){
+      saves.current++;
+      setThreads(list=>[{id:branch,question},...list.filter(thread=>thread.id!==branch)]);
+    }
+  }
+  return <section id="tutor" ref={panel} className="tutor-panel" hidden={!open} tabIndex={-1} aria-labelledby="tutor-title" onKeyDown={e=>{if(e.key==='Escape'){e.stopPropagation();close()}}}>
+    <header><h2 id="tutor-title">{tr("Hỏi gia sư", "Ask the tutor")}</h2><button type="button" onClick={close} aria-label={tr("Ẩn gia sư", "Hide tutor")}>×</button></header>
+    <button className="tutor-new" type="button" onClick={()=>setBranch(newThread())}>{tr("＋ Câu hỏi mới", "＋ New question")}</button>
+    {threads.length>0&&<ul className="tutor-threads" aria-label={tr("Các câu hỏi đã hỏi", "Saved questions")}>{threads.map(item=><li key={item.id}>
+      <button type="button" title={item.question} aria-pressed={branch===item.id} onClick={()=>setBranch(item.id)}>{renderMath(item.question)}</button>
+    </li>)}</ul>}
+    {error&&<p role="alert">{error}</p>}
+    <div className="tutor-conversation">
+      {note&&<blockquote>{renderMath(note.quote)}{note.snapshot&&<small>{Object.entries(note.snapshot).map(([k,v])=>k+' = '+Number(v.toFixed(3))).join(' · ')}</small>}</blockquote>}
+      <Chat key={branch} path={path+'/'+branch} onSaved={saved}/>
+    </div>
+  </section>
 }
 
 function Reader({road,topic}:{road:Road,topic:Topic}){
   const path=road.id+'/'+topic.id;
   const [bundle,setBundle]=useState<Bundle|null>(null),[err,setErr]=useState(''),[busy,setBusy]=useState(false);
-  const [branch,setBranch]=useState<{note:Anchor,x:number,y:number}|null>(null);
+  const [tutorOpen,setTutorOpen]=useState(()=>window.location.hash==='#tutor'),[branch,setBranch]=useState(newThread);
+  const tutorButton=useRef<HTMLButtonElement>(null);
   const [attempt,setAttempt]=useState<number|null>(null);
   const snapshots=useRef<Record<number,Record<string,number>>>({}), live=useRef(true),restored=useRef(false);
   const doc=bundle?.doc;
+  function openHighlight(id:string){setBranch(id);setTutorOpen(true)}
+  function closeTutor(){setTutorOpen(false);tutorButton.current?.focus({preventScroll:true})}
   useEffect(()=>{live.current=true;api<Bundle>('lesson/'+path).then(b=>{if(live.current)setBundle(b)}).catch(e=>{if(live.current)setErr(String(e))});return()=>{live.current=false}},[path]);
   useEffect(()=>{
     if(!doc||restored.current)return;restored.current=true;const original=bundle!.scroll;
@@ -54,34 +127,36 @@ function Reader({road,topic}:{road:Road,topic:Topic}){
   },[doc?.version]);
   async function select(){
     const sel=window.getSelection();if(!doc||!sel?.rangeCount||sel.isCollapsed)return;
-    const range=sel.getRangeAt(0),parent=(n:Node)=>n.nodeType===1?n as Element:n.parentElement;
+    const range=sel.getRangeAt(0).cloneRange(),parent=(n:Node)=>n.nodeType===1?n as Element:n.parentElement;
     const block=parent(range.startContainer)?.closest<HTMLElement>('[data-block]');
     if(!block||block!==parent(range.endContainer)?.closest('[data-block]'))return;
+    const firstFormula=parent(range.startContainer)?.closest('[data-tex]');
+    const lastFormula=parent(range.endContainer)?.closest('[data-tex]');
+    if(firstFormula)range.setStartBefore(firstFormula);
+    if(lastFormula)range.setEndAfter(lastFormula);
     const prefix=range.cloneRange();prefix.selectNodeContents(block);prefix.setEnd(range.startContainer,range.startOffset);
-    const start=prefix.toString().length,quote=range.toString();if(!quote.trim())return;
-    const id=block.dataset.block!,rect=range.getBoundingClientRect(),snapshot=/^[ie]\d+$/.test(id)?snapshots.current[Number(id.slice(1))]??null:null;
+    const start=sourceText(prefix).length,quote=sourceText(range);if(!quote.trim())return;
+    const id=block.dataset.block!,snapshot=/^[ie]\d+$/.test(id)?snapshots.current[Number(id.slice(1))]??null:null;
     try{const note=await api<Anchor>('notes/'+path,{version:doc.version,block:id,start,end:start+quote.length,quote,snapshot});if(!live.current)return;
-      setBundle(b=>b&&({...b,notes:b.notes.some(n=>n.id===note.id)?b.notes:[...b.notes,note]}));sel.removeAllRanges();setBranch({note,x:rect.left,y:rect.bottom})}catch(e){setErr(String(e))}
+      setBundle(b=>b&&({...b,notes:b.notes.some(n=>n.id===note.id)?b.notes:[...b.notes,note]}));sel.removeAllRanges();openHighlight(note.id)}catch(e){setErr(String(e))}
   }
   function annotated(id:string,text:string){
     const notes=(bundle?.notes||[]).filter(n=>n.block===id);
     const stops=[...new Set([0,text.length,...notes.flatMap(n=>[n.start,n.end])])].sort((a,b)=>a-b);
     return <p data-block={id} onMouseUp={select} onKeyUp={e=>{if(e.key==='Shift')void select()}} onTouchEnd={()=>setTimeout(select,0)}>{stops.slice(1).map((end,i)=>{const start=stops[i],s=text.slice(start,end),n=notes.find(n=>n.start<=start&&n.end>=end);
-      const open=(el:HTMLElement)=>{const r=el.getBoundingClientRect();setBranch({note:n!,x:r.left,y:r.bottom})};
-      return n?<mark key={i} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter')open(e.currentTarget)}} onClick={e=>{if(window.getSelection()?.isCollapsed)open(e.currentTarget)}}>{s}</mark>:s})}</p>
+      return n?<mark key={i} role="button" tabIndex={0} onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openHighlight(n.id)}}} onClick={()=>{if(window.getSelection()?.isCollapsed)openHighlight(n.id)}}>{renderMath(s)}</mark>:<React.Fragment key={i}>{renderMath(s)}</React.Fragment>})}</p>
   }
-  return <article key={path}><div className="crumb">{road.title} <span>/</span> {road.chapters.find(c=>c.topics.some(t=>t.id===topic.id))?.title}</div><h1>{topic.title}</h1>
+  return <div className="reader-spread"><article key={path}><div className="crumb">{road.title} <span>/</span> {road.chapters.find(c=>c.topics.some(t=>t.id===topic.id))?.title}</div><h1>{topic.title}</h1>
   {err&&<p role="alert">{err}</p>}{!bundle&&!err&&<p>{tr("Đang mở bài…", "Opening lesson…")}</p>}
   {bundle&&!doc&&<><p>{topic.goal}</p><button className="primary" disabled={busy} onClick={async()=>{setBusy(true);setErr('');try{await api('lesson/'+path,{});const next=await api<Bundle>('lesson/'+path);if(live.current)setBundle(next)}catch(e){setErr(String(e))}finally{setBusy(false)}}}>{busy?tr("Gia sư đang soạn bài…", "Preparing your lesson…"):tr("Học bài này", "Start lesson")}</button></>}
-  {doc&&bundle&&<><div className="intro">{annotated('intro',doc.intro)}</div><nav className="tabs"><a href="#lesson">{tr("Bài giảng", "Lesson")}</a><a href="#quiz">Quiz</a><a href="#tutor">{tr("Hỏi gia sư", "Ask the tutor")}</a></nav>
-  <div id="lesson">{doc.sections.map((s,i)=><section key={i}><h2>{s.title}</h2>{annotated('s'+i,s.text)}
+  {doc&&bundle&&<><div className="intro">{annotated('intro',doc.intro)}</div><nav className="tabs"><a href="#lesson">{tr("Bài giảng", "Lesson")}</a><a href="#quiz">Quiz</a><button type="button" ref={tutorButton} aria-controls="tutor" aria-expanded={tutorOpen} onClick={()=>tutorOpen?closeTutor():setTutorOpen(true)}>{tr("Hỏi gia sư", "Ask the tutor")}</button></nav>
+  <div id="lesson">{doc.sections.map((s,i)=><section key={i}><h2>{renderMath(s.title)}</h2>{annotated('s'+i,s.text)}
     {doc.illustrations.map((v,j)=>v.section===i?<Lab key={j} item={v} index={j} path={path} annotate={annotated} onSnapshot={state=>{snapshots.current[j]=state}}/>:null)}</section>)}</div>
   <section id="quiz"><h2>{tr("Kiểm tra nhanh", "Quick quiz")}</h2>{doc.quiz.map((q,i)=>{const prev=bundle.progress[i]?.at(-1);return <form key={i} className="question" onSubmit={async e=>{e.preventDefault();const answer=new FormData(e.currentTarget).get('answer');setAttempt(i);setErr('');try{const progress=await api<Progress>('quiz/'+path,{question:i,answer});setBundle(b=>b&&({...b,progress}))}catch(e){setErr(String(e))}finally{setAttempt(null)}}}>
-    <h3>{q.prompt}</h3>{q.kind==='choice'?q.choices.map(c=><label className="inline" key={c}><input type="radio" name="answer" required value={c} defaultChecked={prev?.answer===c}/>{c}</label>):<label>{tr("Đáp số và đơn vị", "Answer and unit")}<input required name="answer" defaultValue={prev?.answer} placeholder={tr("Ví dụ: 1,5 m", "For example, 1.5 m")}/></label>}
-    <button disabled={attempt!==null}>{tr("Kiểm tra đáp án", "Check answer")}</button>{prev&&<p role="status" className={prev.correct?'success':'feedback'}><b>{prev.correct?tr("Chính xác.", "Correct."):tr("Chưa đúng.", "Try again.")}</b> {prev.explanation}</p>}</form>})}</section>
-  <section id="tutor"><h2>{tr("Hỏi gia sư", "Ask the tutor")}</h2><Chat path={path+'/main'} initial={bundle.main}/></section>
-  {!!bundle.notes.length&&<details><summary>{tr("Các đoạn đã đánh dấu", "Highlighted passages")} ({bundle.notes.length})</summary>{bundle.notes.map(n=><button className="note" key={n.id} onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setBranch({note:n,x:r.left,y:r.top})}}>{n.quote}</button>)}</details>}
-  {branch&&<Dialog title={tr("Hỏi về đoạn này", "Ask about this passage")} pop={branch} close={()=>setBranch(null)}><blockquote>{branch.note.quote}</blockquote>{branch.note.snapshot&&<small>{Object.entries(branch.note.snapshot).map(([k,v])=>k+' = '+Number(v.toFixed(3))).join(' · ')}</small>}<Chat key={branch.note.id} path={path+'/'+branch.note.id}/></Dialog>}</>}</article>
+    <h3>{renderMath(q.prompt)}</h3>{q.kind==='choice'?q.choices.map(c=><label className="inline" key={c}><input type="radio" name="answer" required value={c} defaultChecked={prev?.answer===c}/><span>{renderMath(c)}</span></label>):<label>{tr("Đáp số và đơn vị", "Answer and unit")}<input required name="answer" defaultValue={prev?.answer} placeholder={tr("Ví dụ: 1,5 m", "For example, 1.5 m")}/></label>}
+    <button disabled={attempt!==null}>{tr("Kiểm tra đáp án", "Check answer")}</button>{prev&&<p role="status" className={prev.correct?'success':'feedback'}><b>{prev.correct?tr("Chính xác.", "Correct."):tr("Chưa đúng.", "Try again.")}</b> {renderMath(prev.explanation)}</p>}</form>})}</section>
+  {!!bundle.notes.length&&<details><summary>{tr("Các đoạn đã đánh dấu", "Highlighted passages")} ({bundle.notes.length})</summary>{bundle.notes.map(n=><button className="note" key={n.id} onClick={()=>openHighlight(n.id)}>{renderMath(n.quote)}</button>)}</details>}
+  </>}</article>{doc&&<TutorPanel path={path} open={tutorOpen} close={closeTutor} branch={branch} setBranch={setBranch} note={bundle?.notes.find(note=>note.id===branch)}/>}</div>
 }
 
 type AISettings={provider:'openai'|'codex',saved_key:boolean,environment_key:boolean,codex:'ready'|'logged_out'|'missing'|'unknown',codex_model:string|null,codex_models:{id:string,name:string}[]};

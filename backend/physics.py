@@ -53,6 +53,7 @@ def motion(config: Motion):
 
 
 def quantity(text):
+    text = text.replace("·", "*").replace("⋅", "*")
     match = re.fullmatch(r"\s*([+-]?(?:\d+(?:[.,]\d*)?|[.,]\d+)(?:[eE][+-]?\d+)?)\s*([\wµ°/*^ .²³⁻-]{0,40})\s*", text)
     if not match:
         raise ValueError(tr("Hãy nhập một số và đơn vị phù hợp.", "Enter a number and an appropriate unit."))

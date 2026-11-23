@@ -1,10 +1,11 @@
 import json
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from threading import Lock
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -12,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field
 from urllib.parse import urlsplit
-from . import ai, providers
+from . import ai, chat_state, providers, tutor_context
 from .prompt_files import prompt
 from .demo import ROAD, SAMPLE, ROAD_EN, SAMPLE_EN
 from .language import language, tr
@@ -54,7 +55,11 @@ def db():
 
 
 with db() as conn:
+    conn.execute("BEGIN IMMEDIATE")
     conn.execute("CREATE TABLE IF NOT EXISTS records (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    if conn.execute("PRAGMA user_version").fetchone()[0] < 1:
+        chat_state.migrate(conn)
+        conn.execute("PRAGMA user_version=1")
 
 
 def get(key, default=None):
@@ -249,33 +254,70 @@ def note(rid:str,tid:str,body:Anchor):
 class Message(BaseModel):
     text:str = Field(min_length=1,max_length=12000)
     search:bool = False
+    request_id: UUID | None = None
 
 
 def thread(rid,tid,branch):
     doc = lesson_for(rid,tid)
-    ctx = dict(topic=topic_for(rid,tid)[1],sections=doc["sections"],illustrations=[
-        {k:x[k] for k in ("title","instruction","explanation")} for x in doc["illustrations"]])
-    if branch != "main":
+    topic = topic_for(rid,tid)[1]
+    note = None
+    if branch != "main" and not re.fullmatch(r"question-[a-f0-9]{32}", branch):
         note = next((n for n in get(f"notes:{rid}:{tid}",[]) if n["id"]==branch),None)
         if not note:
             raise HTTPException(404,tr("Không tìm thấy highlight.", "Highlight not found."))
-        ctx.update(highlight=note)
-    return f"thread:{rid}:{tid}:{branch}",ctx
+    return f"thread:{rid}:{tid}:{branch}", doc, topic, note
+
+
+@app.get("/api/chat/{rid}/{tid}")
+def chat_threads(rid: str, tid: str):
+    topic_for(rid, tid)
+    lesson_for(rid, tid)
+    prefix = f"thread:{rid}:{tid}:"
+    with db() as conn:
+        rows = conn.execute("SELECT key, value FROM records WHERE key GLOB ? ORDER BY rowid DESC", (prefix + "*",))
+        threads = []
+        for key, value in rows:
+            question = next((msg["text"] for msg in json.loads(value) if msg["role"] == "user"), "")
+            if question.strip():
+                threads.append({"id": key[len(prefix):], "question": question.strip()[:180]})
+        return threads
 
 
 @app.get("/api/chat/{rid}/{tid}/{branch}")
 def read_chat(rid:str,tid:str,branch:str):
-    key,_ = thread(rid,tid,branch)
+    key, *_ = thread(rid,tid,branch)
     return get(key,[])
 
 
 @app.post("/api/chat/{rid}/{tid}/{branch}")
 def send(rid:str,tid:str,branch:str,body:Message):
-    key,ctx = thread(rid,tid,branch)
-    with locks[hash(key)%len(locks)]:
-        history = get(key,[])
-        reply = ai.chat(ctx,history,body.text,body.search,settings=ai_settings())
-        return put(key,[*history,dict(role="user",text=body.text),reply])
+    key, doc, topic, note = thread(rid, tid, branch)
+    reservation = chat_state.Send(db, key, body.request_id, body.text, body.search)
+    history, replay = reservation.reserve()
+    if replay:
+        return history
+    try:
+        settings = ai_settings()
+        working = None
+        if os.getenv("STUDY_BOUNDED_CONTEXT") == "1":
+            provider = settings.get("provider", "openai")
+            model = (settings.get("codex_model") or "default") if provider == "codex" else ai.MODEL
+            budget = tutor_context.Budget(provider, model)
+            ctx, optional = tutor_context.evidence(
+                doc, topic, note, get(f"progress:{rid}:{tid}", {}),
+                lambda index: get(f"motion:{rid}:{tid}:{index}"), body.text)
+            working = tutor_context.WorkingContext(db, rid, tid, branch, ctx, optional, history, budget)
+        else:
+            ctx = dict(topic=topic, sections=doc["sections"], illustrations=[
+                {k: x[k] for k in ("title", "instruction", "explanation")} for x in doc["illustrations"]])
+            if note:
+                ctx["highlight"] = note
+        reply = ai.chat(ctx, history, body.text, body.search, settings=settings, working=working, renew=reservation.renew)
+        result = reservation.commit(dict(role="user", text=body.text), reply, working.pending if working else None)
+    except BaseException:
+        reservation.release()
+        raise
+    return result
 
 
 class Playback(BaseModel):
@@ -320,7 +362,7 @@ def repair(rid:str,tid:str,index:int,body:Repair):
             raise HTTPException(409,tr("Đã thử sửa minh họa. Bạn có thể tạo lại.", "An automatic repair was already attempted. You can regenerate the illustration."))
         if not body.manual:
             put(marker,True)
-        replacement = ai.structured(Illustration,prompt("illustrations/contract", "lessons/generate", "illustrations/repair"),dict(item=item,error=body.error),settings=ai_settings())
+        replacement = ai.structured(Illustration,prompt("illustrations/contract", "illustrations/repair"),dict(item=item,error=body.error),settings=ai_settings())
         for field in ("html","css","js"):
             item[field] = replacement[field]
         put(key,doc)

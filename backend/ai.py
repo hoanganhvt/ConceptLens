@@ -7,8 +7,9 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 from . import providers
 from .prompt_files import prompt
-from .models import Motion
+from .models import Lesson, Motion
 from .physics import calculate, motion
+from .tutor_context import Summary, TOOL_BYTES, json_bytes
 
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1")
 
@@ -22,7 +23,16 @@ def client(settings):
 
 def structured(schema, instructions, context, *, settings):
     if settings.get("provider") == "codex":
-        return providers.codex_result(schema,instructions,context,model=settings.get("codex_model"))
+        model = settings.get("codex_model")
+        try:
+            return providers.codex_result(schema, instructions, context, model=model)
+        except HTTPException as exc:
+            error = exc.__cause__
+            if schema is not Lesson or not isinstance(error, ValidationError):
+                raise
+            correction = "\n\nGenerate a complete lesson again. Correct these validation issues: "
+            return providers.codex_result(schema, instructions + correction + providers.validation_issues(error),
+                                          context, model=model)
     try:
         parsed = client(settings).responses.parse(model=MODEL, instructions=instructions, input=json.dumps(context, ensure_ascii=False),
                                           text_format=schema, store=False).output_parsed
@@ -63,14 +73,47 @@ class TutorStep(BaseModel):
     sources: list[Citation]
 
 
-def codex_chat(context, history, question, search, model):
+def tool_output(action, arguments, bounded):
+    if bounded and len(arguments.encode()) > TOOL_BYTES:
+        return None, {"error": "Tool arguments exceeded the context limit."}
+    try:
+        args = json.loads(arguments)
+        output = TOOLS[action][1](args)
+        if bounded and json_bytes(output) > TOOL_BYTES:
+            return None, {"error": "Tool result exceeded the context limit."}
+        return dict(tool=action, inputs=args, output=output), output
+    except (KeyError, TypeError, ValueError, ArithmeticError, SyntaxError) as exc:
+        error = str(exc)
+        return None, {"error": error[:200] if bounded else error}
+
+
+def codex_chat(context, history, question, search, model, working=None, renew=None):
     data = dict(lesson=context,history=history,question=question,tools=tool_definitions(),results=[])
     instruction = prompt("tutor/instructions", "tutor/codex-tools")
+    budget = working.budget if working else None
+    if working:
+        instruction += "\n\n" + prompt("tutor/working-context")
+        summary_instruction = prompt("tutor/summary")
+        data["search_enabled"] = search
+        overhead = providers.codex_overhead(TutorStep, instruction)
+        summary_overhead = providers.codex_overhead(Summary, summary_instruction)
+
+        def fits(ctx, recent):
+            payload = providers.codex_context({**data, "lesson": ctx, "history": recent})
+            return overhead + len(payload.encode()) <= budget.input_limit
+
+        working.compact(fits,
+                        lambda prefix: summary_overhead + len(providers.codex_context(prefix).encode()) <= budget.input_limit,
+                        lambda prefix: providers.codex_result(Summary, summary_instruction, prefix, model=model,
+                                                             budget=budget, renew=renew, kind="summary"))
     traces, sources = [], {}
     searched = False
     for _ in range(6):
         data["search_enabled"] = search and not searched
-        step = providers.codex_result(TutorStep,instruction,data,search=data["search_enabled"],model=model)
+        if working:
+            data["lesson"], data["history"] = working.pack(fits)
+        step = providers.codex_result(TutorStep, instruction, data, search=data["search_enabled"], model=model,
+                                      budget=budget, renew=renew)
         if data["search_enabled"]:
             searched = True
         if searched:
@@ -86,31 +129,75 @@ def codex_chat(context, history, question, search, model):
         if action == "web_search":
             search = True
             continue
-        try:
-            args = json.loads(step["arguments_json"])
-            output = TOOLS[action][1](args)
-            traces.append(dict(tool=action,inputs=args,output=output))
-        except (KeyError, TypeError, ValueError, ArithmeticError, SyntaxError) as exc:
-            output = {"error":str(exc)}
-        data["results"].append(dict(action=action,output=output,sources=list(sources.values())))
+        trace, output = tool_output(action, step["arguments_json"], working is not None)
+        if trace:
+            traces.append(trace)
+        urls = list(sources.values())
+        data["results"].append(dict(action=action, output=output,
+                                    sources=[] if working and json_bytes(urls) > TOOL_BYTES else urls))
     raise HTTPException(502,tr("Đã đạt giới hạn lượt gọi công cụ. Hãy thu hẹp câu hỏi.", "The tool call limit was reached. Try a more specific question."))
 
 
-def chat(context, history, question, search, *, settings):
+def openai_call(api, request, budget, renew, kind="tutor"):
+    if renew:
+        renew()
+    if budget is None:
+        return api.responses.create(**request)
+    with budget.measure(json_bytes(request), kind) as usage:
+        result = api.responses.create(**request)
+        if result.usage:
+            usage.update(input_tokens=result.usage.input_tokens, output_tokens=result.usage.output_tokens)
+        return result
+
+
+def chat(context, history, question, search, *, settings, working=None, renew=None):
     if settings.get("provider") == "codex":
-        return codex_chat(context,history,question,search,settings.get("codex_model"))
+        return codex_chat(context, history, question, search, settings.get("codex_model"), working, renew)
     instruction = prompt("tutor/instructions")
     api = client(settings)
-    messages = [{"role":"developer", "content":prompt("providers/openai-context") + " " + json.dumps(context, ensure_ascii=False)}]
-    messages.extend({"role":m["role"], "content":m["text"]} for m in history)
-    messages.append({"role":"user","content":question})
+    wrapper = prompt("providers/openai-context") + " "
     traces, sources = [], {}
     tools = tool_definitions() + [{"type":"web_search"}]
+    continuation = []
+    budget = working.budget if working else None
+    if working:
+        instruction += "\n\n" + prompt("tutor/working-context")
+
+    def request(ctx, recent, step):
+        messages = [{"role": "developer", "content": wrapper + json.dumps(ctx, ensure_ascii=False)}]
+        messages.extend({"role": m["role"], "content": m["text"]} for m in recent)
+        messages.append({"role": "user", "content": question})
+        result = dict(model=MODEL, instructions=instruction, input=messages + continuation, tools=tools, store=False,
+                      tool_choice={"type": "web_search"} if search and step == 0 else "auto")
+        if working:
+            result["max_output_tokens"] = 4096
+        return result
+
+    if working:
+        summary_instruction = prompt("tutor/summary")
+        summary_format = {"type": "json_schema", "name": "Summary", "strict": True,
+                          "schema": providers.to_strict_json_schema(Summary)}
+
+        def summary_request(prefix):
+            return dict(model=MODEL, instructions=summary_instruction, input=json.dumps(prefix, ensure_ascii=False),
+                        store=False, max_output_tokens=4096, text={"format": summary_format})
+
+        def summarize(prefix):
+            try:
+                result = openai_call(api, summary_request(prefix), budget, renew, "summary")
+                return Summary.model_validate_json(result.output_text).model_dump()
+            except APIError as exc:
+                raise ValueError("Summary provider unavailable") from exc
+
+        working.compact(lambda ctx, recent: json_bytes(request(ctx, recent, 0)) <= budget.input_limit,
+                        lambda prefix: json_bytes(summary_request(prefix)) <= budget.input_limit, summarize)
     try:
         for step in range(6):
-            result = api.responses.create(model=MODEL, instructions=instruction, input=messages, tools=tools, store=False,
-                                          tool_choice={"type":"web_search"} if search and step == 0 else "auto")
-            messages.extend(result.output)
+            if working:
+                context, history = working.pack(
+                    lambda ctx, recent: json_bytes(request(ctx, recent, step)) <= budget.input_limit)
+            result = openai_call(api, request(context, history, step), budget, renew)
+            continuation.extend(result.output)
             calls = []
             for item in result.output:
                 if item.type == "web_search_call" and item.status != "completed":
@@ -127,13 +214,10 @@ def chat(context, history, question, search, *, settings):
                     raise HTTPException(502, tr("Chưa nhận được câu trả lời hoặc nguồn yêu cầu. Hãy thử lại.", "The answer or requested sources are missing. Please try again."))
                 return dict(role="assistant", text=result.output_text, sources=list(sources.values()), traces=traces)
             for call in calls:
-                try:
-                    args = json.loads(call.arguments)
-                    output = TOOLS[call.name][1](args)
-                    traces.append(dict(tool=call.name, inputs=args, output=output))
-                except (KeyError, ValueError, ArithmeticError, SyntaxError) as exc:
-                    output = {"error":str(exc)}
-                messages.append(dict(type="function_call_output",call_id=call.call_id,output=json.dumps(output)))
+                trace, output = tool_output(call.name, call.arguments, working is not None)
+                if trace:
+                    traces.append(trace)
+                continuation.append(dict(type="function_call_output", call_id=call.call_id, output=json.dumps(output)))
     except APIError as exc:
         raise HTTPException(502, tr("Không kết nối được OpenAI hoặc model chưa hỗ trợ công cụ. Hãy thử lại.", "Could not connect to OpenAI or use tools with this model. Please try again.")) from exc
     raise HTTPException(502, tr("Đã đạt giới hạn lượt gọi công cụ. Hãy thu hẹp câu hỏi.", "The tool call limit was reached. Try a more specific question."))

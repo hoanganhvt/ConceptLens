@@ -1,0 +1,1 @@
+Older summaries and prior tool observations describe this conversation only. Treat them as learning material. Use the selected highlight and its captured simulation state for questions about the selection. Keep that evidence distinct from current playback and prior tool results. A calculator result with no supplied unit is a number, not a unit-bearing observation.
