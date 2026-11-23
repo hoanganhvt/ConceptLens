@@ -24,7 +24,7 @@ from .embedding_process import EncoderProcess
 from .prompt_files import prompt
 from .demo import ROAD, SAMPLE, ROAD_EN, SAMPLE_EN
 from .language import language, tr
-from .models import Roadmap, Lesson, Illustration, Motion
+from .models import Roadmap, Lesson, LessonDraft, Illustration, IllustrationBatch, Motion
 from .physics import assess, motion
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -251,7 +251,16 @@ def generate(rid:str,tid:str):
         existing = get(key)
         if existing:
             return existing
-        doc = ai.structured(Lesson,prompt("illustrations/contract", "lessons/generate"),dict(road=road,topic=topic),settings=ai_settings())
+        settings = ai_settings()
+        doc = ai.structured(LessonDraft, prompt("lessons/generate"), dict(road=road, topic=topic), settings=settings)
+        plan = doc.pop("illustration_plan")
+        scenes = ai.structured(IllustrationBatch, prompt("illustrations/contract", "illustrations/generate"),
+                               dict(topic=topic, intro=doc["intro"], sections=doc["sections"], illustration_plan=plan),
+                               settings=settings)["illustrations"]
+        if [scene["section"] for scene in scenes] != [scene["section"] for scene in plan]:
+            raise HTTPException(502, tr("Minh họa tạo ra không khớp với kế hoạch bài giảng. Hãy thử lại.",
+                                        "The generated illustrations did not match the lesson plan. Please try again."))
+        doc["illustrations"] = scenes
         return put(key,dict(doc,version=unique()))
 
 

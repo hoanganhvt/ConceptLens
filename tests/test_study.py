@@ -25,7 +25,15 @@ os.environ["STUDY_DATA"] = TEMP.name
 from backend import main as app
 from backend.demo import SAMPLE, ROAD
 from backend.physics import calculate, grade
-from backend.models import Motion, Roadmap
+from backend.models import Illustration, IllustrationBatch, LessonDraft, Motion, Roadmap
+
+
+def planned_sample():
+    draft = deepcopy(SAMPLE)
+    visuals = {"illustrations": draft.pop("illustrations")}
+    draft["illustration_plan"] = [{"section": scene["section"], "brief": scene["instruction"]}
+                                  for scene in visuals["illustrations"]]
+    return draft, visuals
 
 
 class Study(unittest.TestCase):
@@ -57,7 +65,7 @@ class Study(unittest.TestCase):
     def test_lesson_retries_invalid_codex_output(self):
         road = app.commit(Roadmap.model_validate(ROAD))
         rid, tid = road["id"], road["chapters"][0]["topics"][0]["id"]
-        lesson = deepcopy(SAMPLE)
+        lesson, visuals = planned_sample()
         lesson["quiz"][0]["answer"] = "-6 kg·m/s"
         broken = deepcopy(lesson)
         broken["quiz"][0]["answer"] = "p = -6 kg·m/s"
@@ -66,18 +74,44 @@ class Study(unittest.TestCase):
             event = {"type": "item.completed", "item": {"type": "agent_message", "text": json.dumps(doc)}}
             return CompletedProcess([], 0, json.dumps(event), "")
 
-        with patch.object(app, "ai_settings", return_value={"provider": "codex"}), \
+        settings = {"provider": "codex", "codex_model": "lesson-model", "codex_visual_model": "visual-model"}
+        outputs = [response(broken), response(lesson), response(visuals), response(visuals["illustrations"][0])]
+        with patch.object(app, "ai_settings", return_value=settings), \
              patch.object(app.providers, "cli_status", return_value="ready"), \
-             patch.object(app.providers.subprocess, "run", side_effect=[response(broken), response(lesson)]) as run, \
+             patch.object(app.providers.subprocess, "run", side_effect=outputs) as run, \
              self.assertLogs(app.providers.log, level="WARNING") as logs:
             doc = app.generate(rid, tid)
             self.assertEqual(app.generate(rid, tid), doc)
-        self.assertEqual(run.call_count, 2)
-        self.assertIn("quiz.0 (value_error)", run.call_args.kwargs["input"])
-        self.assertIn("Hãy nhập một số và đơn vị phù hợp.", run.call_args.kwargs["input"])
+            app.repair(rid, tid, 0, app.Repair(error="Render error", manual=True))
+        self.assertEqual(run.call_count, 4)
+        requests = run.call_args_list
+        self.assertEqual([call.args[0][-2] for call in requests], ["lesson-model"]*2 + ["visual-model"]*2)
+        self.assertIn("quiz.0 (value_error)", requests[1].kwargs["input"])
+        self.assertIn("Hãy nhập một số và đơn vị phù hợp.", requests[1].kwargs["input"])
+        self.assertIn("illustration_plan", requests[2].kwargs["input"])
         self.assertIn("quiz.0 (value_error)", logs.output[0])
         self.assertNotIn("p = -6 kg", logs.output[0])
         self.assertTrue(grade(doc["quiz"][0], "-6 kg⋅m/s"))
+        self.assertNotIn("illustration_plan", doc)
+
+    def test_openai_visual_model_and_unmatched_plan(self):
+        road = app.commit(Roadmap.model_validate(ROAD))
+        rid, tid = road["id"], road["chapters"][0]["topics"][0]["id"]
+        draft, visuals = planned_sample()
+        visuals["illustrations"][0]["section"] = 1
+        parsed = [LessonDraft.model_validate(draft), IllustrationBatch.model_validate(visuals),
+                  Illustration.model_validate(visuals["illustrations"][0])]
+        settings = {"provider": "openai", "openai_visual_model": "vision-code-model"}
+        with patch.object(app, "ai_settings", return_value=settings), patch.object(app.ai, "client") as client:
+            parse = client.return_value.responses.parse
+            parse.side_effect = [SimpleNamespace(output_parsed=value) for value in parsed]
+            with self.assertRaises(HTTPException) as mismatch:
+                app.generate(rid, tid)
+            self.assertEqual(mismatch.exception.status_code, 502)
+            self.assertIsNone(app.read(rid, tid)["doc"])
+            app.ai.structured(Illustration, "Repair", {}, settings={"provider": "openai"})
+        self.assertEqual([call.kwargs["model"] for call in parse.call_args_list],
+                         [app.ai.MODEL, "vision-code-model", app.ai.MODEL])
 
     def test_course_and_conversations(self):
         with patch.object(app.ai,"structured",return_value=ROAD):
@@ -85,10 +119,10 @@ class Study(unittest.TestCase):
         road=app.commit(Roadmap.model_validate(draft))
         rid,tid=road["id"],road["chapters"][0]["topics"][0]["id"]
         frozen=(app.DATA/rid/"roadmap.json").read_bytes()
-        with patch.object(app.ai,"structured",return_value=SAMPLE) as generate:
+        with patch.object(app.ai,"structured",side_effect=planned_sample()) as generate:
             doc=app.generate(rid,tid)
             self.assertEqual(doc,app.generate(rid,tid))
-            generate.assert_called_once()
+            self.assertEqual(generate.call_count, 2)
         note=app.note(rid,tid,app.Anchor(block="intro",start=0,end=3,quote="Nếu",version=doc["version"]))
         with patch.object(app.ai,"chat",return_value=dict(role="assistant",text="Đã hiểu",sources=[])) as chat:
             app.send(rid,tid,note["id"],app.Message(text="Câu hỏi riêng"))

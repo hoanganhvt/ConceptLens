@@ -39,6 +39,8 @@ The checks below use automated backend tests, browser tests, and scripted OpenAI
 
 Open **Settings**, select a provider, and save. The selection applies to the next generation or tutor request, including follow-ups in saved threads. Roadmap drafting, lesson generation, illustration repair, and tutor replies use the chosen provider. Saved lessons, simulations, and quiz grading run locally.
 
+Use **Illustration model** in Settings to choose a separate model for building and repairing illustrations. Codex CLI uses its model list and OpenAI accepts a model ID. A blank field uses the lesson model. New lessons use one request for the teaching text and scene plan, then a separate request for the illustrations.
+
 | Provider | Setup |
 | --- | --- |
 | **OpenAI API** | Enter a key in Settings or set `OPENAI_API_KEY` before launch. A saved key takes precedence and Windows protects it with DPAPI. Set `OPENAI_MODEL` before launch to override the default `gpt-4.1`. |

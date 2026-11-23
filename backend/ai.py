@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ValidationError
 from . import providers
 from .prompt_files import prompt
-from .models import Lesson, Motion
+from .models import Illustration, IllustrationBatch, LessonDraft, Motion
 from .physics import calculate, motion
 from .tutor_context import Summary, TOOL_BYTES, json_bytes
 
@@ -23,19 +23,21 @@ def client(settings):
 
 
 def structured(schema, instructions, context, *, settings):
-    if settings.get("provider") == "codex":
-        model = settings.get("codex_model")
+    provider = settings.get("provider", "openai")
+    visual_model = settings.get(f"{provider}_visual_model") if schema in (IllustrationBatch, Illustration) else None
+    if provider == "codex":
+        model = visual_model or settings.get("codex_model")
         try:
             return providers.codex_result(schema, instructions, context, model=model)
         except HTTPException as exc:
             error = exc.__cause__
-            if schema is not Lesson or not isinstance(error, ValidationError):
+            if schema not in (LessonDraft, IllustrationBatch) or not isinstance(error, ValidationError):
                 raise
-            correction = "\n\nGenerate a complete lesson again. Correct these validation issues: "
+            correction = "\n\nGenerate the complete response again. Correct these validation issues: "
             return providers.codex_result(schema, instructions + correction + providers.validation_issues(error),
                                           context, model=model)
     try:
-        parsed = client(settings).responses.parse(model=MODEL, instructions=instructions, input=json.dumps(context, ensure_ascii=False),
+        parsed = client(settings).responses.parse(model=visual_model or MODEL, instructions=instructions, input=json.dumps(context, ensure_ascii=False),
                                           text_format=schema, store=False).output_parsed
         if parsed is None:
             raise ValueError()

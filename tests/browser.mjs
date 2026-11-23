@@ -37,19 +37,23 @@ try{
   const modelSelect=page.getByLabel('Model Codex');
   const modelId=await modelSelect.locator('option').evaluateAll(options=>options[1]?.value||'');
   await modelSelect.selectOption(modelId);
+  await page.getByLabel('Model minh họa').selectOption(modelId);
   await page.getByRole('button',{name:'Lưu cài đặt'}).click();
   await page.getByRole('dialog').waitFor({state:'hidden'});
   await page.reload();
   await settingsButton.click();
   assert.equal(await page.getByLabel('Nguồn AI').inputValue(),'codex');
   assert.equal(await page.getByLabel('Model Codex').inputValue(),modelId);
+  assert.equal(await page.getByLabel('Model minh họa').inputValue(),modelId);
   await page.getByLabel('Nguồn AI').selectOption('openai');
+  await page.getByLabel('Model minh họa').fill('fixture-visual-model');
   if(process.platform==='win32'){
     await page.getByLabel('OpenAI API key',{exact:true}).fill('offline-test-secret');
     await page.getByRole('button',{name:'Lưu cài đặt'}).click();
     await page.getByRole('dialog').waitFor({state:'hidden'});
     const publicSettings=await (await fetch(base+'/api/settings')).text();
     assert.equal(JSON.parse(publicSettings).saved_key,true);
+    assert.equal(JSON.parse(publicSettings).openai_visual_model,'fixture-visual-model');
     assert.ok(!publicSettings.includes('offline-test-secret'));
     await settingsButton.click();
     await page.getByLabel('Xóa khóa đã lưu trên máy').check();

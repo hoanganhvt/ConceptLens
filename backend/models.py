@@ -52,11 +52,36 @@ class Question(BaseModel):
         return self
 
 
-class Lesson(BaseModel):
+class LessonText(BaseModel):
     intro: str
     sections: list[Section] = Field(min_length=1)
-    illustrations: list[Illustration] = Field(min_length=1)
     quiz: list[Question] = Field(min_length=1)
+
+
+class IllustrationPlan(BaseModel):
+    section: int = Field(ge=0)
+    brief: str = Field(min_length=1)
+
+
+class LessonDraft(LessonText):
+    illustration_plan: list[IllustrationPlan] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def valid_plan(self):
+        if self.illustration_plan[0].section != 0 or any(
+            scene.section >= len(self.sections) for scene in self.illustration_plan
+        ):
+            raise ValueError(tr("Minh họa đầu tiên phải thuộc mục mở đầu, và mỗi minh họa phải thuộc một mục của bài.",
+                                "Plan the opening illustration first and link each illustration to an existing section."))
+        return self
+
+
+class IllustrationBatch(BaseModel):
+    illustrations: list[Illustration] = Field(min_length=1)
+
+
+class Lesson(LessonText):
+    illustrations: list[Illustration] = Field(min_length=1)
 
     @model_validator(mode="after")
     def valid_sections(self):

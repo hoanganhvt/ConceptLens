@@ -211,7 +211,7 @@ function Reader({road,topic,memoryEpoch,openMemory}:{road:Road,topic:Topic}&Memo
     note={bundle?.notes.find(note=>note.id===branch)} memoryEpoch={memoryEpoch} openMemory={openMemory}/>}</div>
 }
 
-type AISettings={provider:'openai'|'codex',saved_key:boolean,environment_key:boolean,codex:'ready'|'logged_out'|'missing'|'unknown',codex_model:string|null,codex_models:{id:string,name:string}[]};
+type AISettings={provider:'openai'|'codex',saved_key:boolean,environment_key:boolean,codex:'ready'|'logged_out'|'missing'|'unknown',codex_model:string|null,codex_visual_model:string|null,openai_visual_model:string|null,codex_models:{id:string,name:string}[]};
 
 function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMemoryPolicyChange:()=>void,focusMemory?:MemoryRef}){
   const [settings,setSettings]=useState<AISettings|null>(null),[key,setKey]=useState(''),[remove,setRemove]=useState(false);
@@ -220,7 +220,10 @@ function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMem
   const status={ready:tr("Codex CLI đã đăng nhập.", "Codex CLI is signed in."),logged_out:tr("Chạy codex login trong terminal để đăng nhập.", "Run codex login in your terminal to sign in."),missing:tr("Chưa tìm thấy Codex CLI trong PATH của máy chủ.", "Codex CLI was not found on the server PATH."),unknown:tr("Chưa xác định được trạng thái. Kiểm tra bằng codex login status.", "Sign-in status is unknown. Run codex login status to check.")};
   return <Dialog title={tr("Cài đặt", "Settings")} close={close}>{settings?<form onSubmit={async e=>{
     e.preventDefault();setBusy(true);setError('');
-    try{await api('settings',{provider:settings.provider,...(settings.provider==='codex'?{codex_model:settings.codex_model}:{}),...(settings.provider==='openai'&&key.trim()?{api_key:key.trim()}:{}),remove_key:settings.provider==='openai'&&remove});close()}
+    try{await api('settings',{provider:settings.provider,...(settings.provider==='codex'?
+      {codex_model:settings.codex_model,codex_visual_model:settings.codex_visual_model}:
+      {openai_visual_model:settings.openai_visual_model?.trim()||null,...(key.trim()?{api_key:key.trim()}:{})}),
+      remove_key:settings.provider==='openai'&&remove});close()}
     catch(e){setError(String(e));setBusy(false)}
   }}>
     <label>{tr("Nguồn AI", "AI provider")}<select value={settings.provider} onChange={e=>setSettings({...settings,provider:e.target.value as AISettings['provider']})}>
@@ -229,11 +232,18 @@ function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMem
       <label>{settings.saved_key?tr("Thay API key", "Replace API key"):'OpenAI API key'}<input type="password" autoComplete="off" disabled={remove} value={key} onChange={e=>setKey(e.target.value)} placeholder={settings.saved_key?tr("Đã lưu khóa trên máy", "Key saved on this device"):tr("Nhập API key", "Enter API key")}/></label>
       <p>{settings.saved_key?tr("Khóa đã lưu được mã hóa bằng tài khoản Windows của bạn.", "Your saved key is encrypted with your Windows account."):settings.environment_key?tr("Đang dùng khóa từ OPENAI_API_KEY. Khóa nhập ở đây sẽ được ưu tiên.", "Using OPENAI_API_KEY. A key entered here takes priority."):tr("Bạn cũng có thể dùng biến môi trường OPENAI_API_KEY.", "You can also set the OPENAI_API_KEY environment variable.")}</p>
       {settings.saved_key&&<label className="inline"><input type="checkbox" checked={remove} onChange={e=>setRemove(e.target.checked)}/>{tr("Xóa khóa đã lưu trên máy", "Remove the saved key from this device")}</label>}
-    </>:<><p>{status[settings.codex]}</p><label>{tr("Model Codex", "Codex model")}<select value={settings.codex_model||''} onChange={e=>setSettings({...settings,codex_model:e.target.value||null})}>
-      <option value="">{tr("Mặc định của Codex CLI", "Codex CLI default")}</option>
-      {settings.codex_model&&!settings.codex_models.some(m=>m.id===settings.codex_model)&&<option value={settings.codex_model}>{settings.codex_model} {tr("(đã lưu)", "(saved)")}</option>}
-      {settings.codex_models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
-    </select></label></>}
+      <label>{tr("Model minh họa", "Illustration model")}<input value={settings.openai_visual_model||''} maxLength={128}
+        placeholder={tr("Dùng model của bài giảng", "Use the lesson model")} onChange={e=>setSettings({...settings,openai_visual_model:e.target.value})}/></label>
+    </>:<><p>{status[settings.codex]}</p>{(['codex_model','codex_visual_model'] as const).map(field=>{
+      const model=settings[field];
+      const primary=field==='codex_model';
+      return <label key={field}>{primary?tr("Model Codex", "Codex model"):tr("Model minh họa", "Illustration model")}
+        <select value={model||''} onChange={e=>setSettings({...settings,[field]:e.target.value||null})}>
+          <option value="">{primary?tr("Mặc định của Codex CLI", "Codex CLI default"):tr("Dùng model của bài giảng", "Use the lesson model")}</option>
+          {model&&!settings.codex_models.some(m=>m.id===model)&&<option value={model}>{model} {tr("(đã lưu)", "(saved)")}</option>}
+          {settings.codex_models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}
+        </select></label>
+    })}</>}
     <button className="primary" disabled={busy}>{busy?tr("Đang lưu…", "Saving…"):tr("Lưu cài đặt", "Save settings")}</button>
   </form>:!error&&<p>{tr("Đang đọc cài đặt…", "Loading settings…")}</p>}{error&&<p role="alert">{error}</p>}
   <MemorySettings onMemoryPolicyChange={onMemoryPolicyChange} focusMemory={focusMemory}/></Dialog>

@@ -263,8 +263,15 @@ def run_case(case, provider, language, live, codex_model, bounded):
             recorder.install(stack, backend)
             recorder.select(provider)
             fixtures = unrelated_content(backend.Roadmap, backend.Lesson)
+            lesson = fixtures[backend.Lesson]
+            visuals = lesson["illustrations"]
+            fixtures[backend.LessonDraft] = {field: lesson[field] for field in ("intro", "sections", "quiz")}
+            fixtures[backend.LessonDraft]["illustration_plan"] = [
+                {"section": scene["section"], "brief": scene["instruction"]} for scene in visuals
+            ]
+            fixtures[backend.IllustrationBatch] = {"illustrations": visuals}
             with patch.object(backend.ai, "structured", side_effect=lambda schema, *args, **kw: fixtures[schema]):
-                seeded = seed(route, fixtures[backend.Lesson])
+                seeded = seed(route, lesson)
             if bounded:
                 exercise_bounded(route, recorder, *seeded)
             else:

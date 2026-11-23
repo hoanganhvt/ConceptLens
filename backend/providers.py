@@ -24,6 +24,8 @@ log = logging.getLogger("uvicorn.error").getChild("providers")
 class SettingsUpdate(BaseModel):
     provider: Literal["openai", "codex"]
     codex_model: str | None = Field(default=None, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+    codex_visual_model: str | None = Field(default=None, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+    openai_visual_model: str | None = Field(default=None, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._:-]*$")
     api_key: SecretStr | None = Field(default=None, max_length=1024)
     remove_key: bool = False
 
@@ -50,8 +52,9 @@ def crypt(data: bytes, encrypt: bool):
 
 def updated(current, body):
     record = dict(current, provider=body.provider)
-    if "codex_model" in body.model_fields_set:
-        record["codex_model"] = body.codex_model
+    for field in ("codex_model", "codex_visual_model", "openai_visual_model"):
+        if field in body.model_fields_set:
+            record[field] = getattr(body, field)
     if body.remove_key:
         record.pop("key", None)
     elif body.api_key is not None:
@@ -109,7 +112,8 @@ def public_settings(record):
     executable = shutil.which("codex")
     return dict(provider=record.get("provider","openai"), saved_key=bool(record.get("key")),
                 environment_key=bool(os.getenv("OPENAI_API_KEY")), codex=cli_status(executable),
-                codex_model=record.get("codex_model"), codex_models=codex_models(executable))
+                codex_model=record.get("codex_model"), codex_models=codex_models(executable),
+                codex_visual_model=record.get("codex_visual_model"), openai_visual_model=record.get("openai_visual_model"))
 
 
 def codex_request(schema, instructions, context):
