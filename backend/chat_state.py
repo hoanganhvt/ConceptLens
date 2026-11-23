@@ -84,7 +84,7 @@ class Send:
         raise conflict(tr("Yêu cầu đã hết hạn. Hãy gửi lại câu hỏi.",
                           "The request expired. Please send your question again."))
 
-    def commit(self, user, reply, summary=None):
+    def commit(self, user, reply, summary=None, *, verify=None):
         with self.db() as conn:
             conn.execute("BEGIN IMMEDIATE")
             active = conn.execute("""SELECT revision FROM tutor_leases
@@ -93,6 +93,8 @@ class Send:
             history = transcript(conn, self.branch[1])
             if not active or active[0] != len(history):
                 self.expired()
+            if verify:
+                verify(conn)
             history.extend((user, reply))
             conn.execute("INSERT OR REPLACE INTO records VALUES (?,?)",
                          (self.branch[1], json.dumps(history, ensure_ascii=False)))

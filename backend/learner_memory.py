@@ -268,17 +268,20 @@ def evidence(conn, memory_id, owner=OWNER):
         WHERE e.owner=? AND e.memory_id=? ORDER BY q.seq""", (owner, memory_id))
 
 
+def public_memory(conn, row, road_title):
+    memory = {key: row[key] for key in row.keys() if key != "owner"}
+    memory["scope"] = "roadmap" if row["roadmap_id"] else "learner"
+    memory["confidence"] = {"tentative": "low", "recurring": "supported", "resolved": "none", "confirmed": "learner"}[row["status"]]
+    if row["status"] != "confirmed":
+        memory["statement"] = unit_statement(row["diagnostic"], language.get())
+    memory["roadmap_title"] = road_title(row["roadmap_id"]) if row["roadmap_id"] else None
+    memory["evidence"] = [reference(source_row) for source_row in evidence(conn, row["id"], row["owner"])]
+    return memory
+
+
 def list_memories(conn, road_title, owner=OWNER):
-    memories = []
-    for row in rows(conn, """SELECT * FROM learner_memories WHERE owner=? ORDER BY updated_at DESC, id""", (owner,)):
-        memory = {key: row[key] for key in row.keys() if key != "owner"}
-        memory["scope"] = "roadmap" if row["roadmap_id"] else "learner"
-        memory["confidence"] = {"tentative": "low", "recurring": "supported", "resolved": "none", "confirmed": "learner"}[row["status"]]
-        if row["status"] != "confirmed":
-            memory["statement"] = unit_statement(row["diagnostic"], language.get())
-        memory["roadmap_title"] = road_title(row["roadmap_id"]) if row["roadmap_id"] else None
-        memory["evidence"] = [reference(source_row) for source_row in evidence(conn, row["id"], owner)]
-        memories.append(memory)
+    memories = [public_memory(conn, row, road_title) for row in rows(
+        conn, "SELECT * FROM learner_memories WHERE owner=? ORDER BY updated_at DESC, id", (owner,))]
     return dict(enabled=bool(settings(conn, owner)[0]), memories=memories)
 
 

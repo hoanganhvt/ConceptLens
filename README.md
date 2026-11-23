@@ -24,7 +24,7 @@ The built-in Free fall lesson works before you configure a provider. Set its tim
 - **Explore illustrated lessons.** Generate and reopen lessons with worked examples, interactive visuals, and quizzes. The lesson prompt asks for at least two illustrated examples per concept. Move through an event with a slider, or use the motion lab's playback, initial conditions, and position and velocity graphs. Lesson, quiz, and tutor formulas render as LaTeX.
 - **Ask the tutor.** Open the collapsible panel on the right. Each new question starts a thread, and the current lesson's saved questions reopen with their full conversations. Select a passage or illustration caption to create a separate highlight thread. A simulation highlight keeps the values shown when you selected it. The tutor is prompted to give a short, direct answer in plain words. It can run Python calculations and simulations, and return source links for web lookups.
 - **Check your understanding.** Answer choice questions or submit a number with units. Grading and feedback work locally, and the app saves quiz attempts, reading position, and motion settings.
-- **Manage learner memory.** In **Settings**, turn capture on to save goals and preferences and track recurring unit mistakes. Two distinct quiz questions in the same roadmap must support the same unit diagnosis before it becomes recurring. Inspect the original answers, edit or forget a memory, and pause capture while keeping saved memories available for review. Forgetting a memory leaves the original quiz and chat history available.
+- **Manage learner memory.** In **Settings → Learner memory**, select **Enable learner memory** to save goals and preferences and track recurring unit mistakes. Two distinct quiz questions in the same roadmap must support the same unit diagnosis before it becomes recurring. You can inspect the original answers, edit or forget a memory, and turn the setting off to pause capture and tutor use. Saved memories remain available for review, and forgetting a memory preserves the original quiz and chat history.
 
 ## AI providers
 
@@ -39,7 +39,11 @@ Open **Settings**, select a provider, and save. The selection applies to the nex
 
 To enable bounded tutor context, set `STUDY_BOUNDED_CONTEXT=1` before launching. This mode packs the current question, relevant lesson and highlight evidence, recent turns, and a summary of older turns into a configurable input budget. The reader keeps the full transcript. Set `STUDY_TUTOR_CONTEXT_WINDOW` for a common window or `STUDY_TUTOR_MODEL_WINDOWS` for model-specific overrides. [Phase 1 architecture](documents/phase-1-architecture.md) · [Verification](result/phase-1.md)
 
-Learner memory capture is off by default and is enabled separately in Settings. The local memory worker processes quiz evidence without provider calls. Tutor replies currently use the active lesson and conversation branch. [Phase 2 architecture](documents/phase-2-architecture.md) · [Verification](result/phase-2.md)
+Learner memory is off by default. Once enabled in Settings, quiz evidence is processed locally without provider calls. [Learner memory architecture](documents/phase-2-architecture.md)
+
+Tutor retrieval also requires bounded context and an approved local encoder package configured through `STUDY_EMBEDDING_MODEL_DIR` before launch. Settings shows whether the encoder is ready. The current benchmark qualified no encoder, so a standard installation uses lesson and conversation context for tutor replies. You can still capture and manage learner memories. [Retrieval architecture](documents/phase-3-architecture.md) · [Verification](result/phase-3/document.md) · [Benchmark](result/phase-3/benchmark.md)
+
+When retrieval is ready, ConceptLens ranks memories locally and may send up to three relevant memory statements and source details to the selected AI provider. Expand **Memories used** below a tutor reply to open the referenced memory and any supporting quiz attempts. After you edit or forget a memory, the old reference is shown as unavailable.
 
 ## Data and backups
 

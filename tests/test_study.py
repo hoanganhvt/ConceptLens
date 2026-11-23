@@ -6,16 +6,19 @@ import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import closing
+from contextlib import ExitStack, closing
 from copy import deepcopy
 from pathlib import Path
 from subprocess import CompletedProcess, run
 from threading import Event
+from time import monotonic, sleep
+from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from openai.types.responses import ResponseFunctionToolCall
 
 TEMP = tempfile.TemporaryDirectory()
 os.environ["STUDY_DATA"] = TEMP.name
@@ -274,7 +277,7 @@ class MemoryMigration(unittest.TestCase):
             "thread:physics:free-fall:main": [{"role": "user", "text": "Legacy question"}],
         }
         summary = ("local", "physics", "free-fall", "old-version", "main", 1, 2, '{"text":"Older turns"}')
-        for version in (0, 1):
+        for version in (0, 1, 2):
             with self.subTest(version=version), tempfile.TemporaryDirectory() as folder:
                 study = Path(folder) / "study"
                 study.mkdir()
@@ -285,10 +288,15 @@ class MemoryMigration(unittest.TestCase):
                 with closing(sqlite3.connect(study / "study.sqlite")) as conn, conn:
                     conn.execute("CREATE TABLE records (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
                     conn.executemany("INSERT INTO records VALUES (?,?)", [(k, json.dumps(v)) for k, v in records.items()])
-                    if version == 1:
+                    if version >= 1:
                         app.chat_state.migrate(conn)
                         conn.execute("PRAGMA user_version=1")
                         conn.execute("INSERT INTO tutor_summaries VALUES (?,?,?,?,?,?,?,?)", summary)
+                    if version == 2:
+                        app.learner_memory.migrate(conn)
+                        app.learner_memory.set_enabled(conn, True)
+                        app.learner_memory.create(conn, "preference", "Keep this memory across migration")
+                        conn.execute("PRAGMA user_version=2")
                 restored = Path(folder) / "restored"
                 for directory in (study, study, restored):
                     if directory == restored:
@@ -297,12 +305,16 @@ class MemoryMigration(unittest.TestCase):
                                  env={**os.environ, "STUDY_DATA": str(directory)}, capture_output=True, text=True)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     with closing(sqlite3.connect(directory / "study.sqlite")) as conn:
-                        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 2)
+                        self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
                         for key, value in records.items():
                             row = conn.execute("SELECT value FROM records WHERE key=?", (key,)).fetchone()
                             self.assertEqual(json.loads(row[0]), value)
-                        if version == 1:
+                        if version >= 1:
                             self.assertEqual(conn.execute("SELECT * FROM tutor_summaries").fetchone(), summary)
+                        if version == 2:
+                            self.assertEqual(conn.execute("SELECT statement, revision FROM learner_memories").fetchall(),
+                                             [("Keep this memory across migration", 1)])
+                        self.assertEqual(conn.execute("SELECT * FROM learner_memory_vectors").fetchall(), [])
                     self.assertEqual((directory / "kept-road" / "roadmap.json").read_bytes(), saved_road.read_bytes())
 
     def test_failed_migration_rolls_back_schema_and_version(self):
@@ -332,6 +344,24 @@ with patch.object(learner_memory, 'migrate', fail):
                 self.assertEqual(conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall(), [("records",)])
 
 
+class FakeMemoryEncoder:
+    def __init__(self, identifier="scripted-v1"):
+        self.metadata = {"id": identifier, "dimension": 2, "threshold": 0.6}
+        self.status = "ready"
+        self.requests = []
+
+    def start(self):
+        pass
+
+    def close(self):
+        pass
+
+    def encode(self, texts, *, query, deadline):
+        if query:
+            self.requests.extend(texts)
+        return [[0.0, -1.0] if "unrelated" in text else [1.0, 0.0] for text in texts]
+
+
 class LearnerMemory(unittest.TestCase):
     base = "/api/memories"
 
@@ -342,7 +372,8 @@ class LearnerMemory(unittest.TestCase):
             conn.execute("CREATE TABLE records (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
             app.chat_state.migrate(conn)
             app.learner_memory.migrate(conn)
-            conn.execute("PRAGMA user_version=2")
+            app.memory_retrieval.migrate(conn)
+            conn.execute("PRAGMA user_version=3")
         self.client = TestClient(app.app, headers={"X-Study-Language": "en"})
         self.addCleanup(self.client.close)
         self.rid, self.tid, self.doc = self.seed_lesson()
@@ -566,6 +597,228 @@ with TestClient(app) as client:
         preference = next(m for m in self.memories() if m["kind"] == "preference")
         self.assertEqual(self.client.delete(f"{self.base}/{preference['id']}", params={"revision": preference["revision"]}).status_code, 200)
         self.assertNotIn(preference["id"], {m["id"] for m in self.restart_memories()})
+
+    def add_preference(self, text):
+        response = self.client.post(self.base, json={"kind": "preference", "statement": text})
+        self.assertEqual(response.status_code, 200, response.text)
+        return next(item for item in response.json()["memories"] if item["statement"] == text)
+
+    def retrieval(self, encoder, question="Giải thích cách đổi đơn vị", note=None):
+        return app.memory_retrieval.retrieve(app.db, encoder, self.rid, {"title": "Distance"}, note, question)[1]
+
+    def test_v2_index_filters_scope_revision_and_provenance(self):
+        self.capture(True)
+        preference = self.add_preference("Use a diagram to explain units")
+        self.attempt(3, "7 m")
+        self.process()
+        tentative, = [item for item in self.memories() if item["status"] == "tentative"]
+        attempts = [self.attempt(0, "19.62 s")["attempt_id"], self.attempt(2, "42 s")["attempt_id"]]
+        self.process()
+        recurring, = [item for item in self.memories() if item["status"] == "recurring"]
+        encoder = FakeMemoryEncoder()
+        app.memory_retrieval.sync(app.db, encoder)
+        with app.db() as conn:
+            exemplar = conn.execute("SELECT vector FROM learner_memory_vectors WHERE memory_id=?",
+                                    (preference["id"],)).fetchone()[0]
+            ids = ["foreign", "elsewhere", "sibling", "stale", "resolved", "deleted"]
+            fields = [
+                ("other", ids[0], "confirmed", None),
+                ("local", ids[1], "confirmed", "different-roadmap"),
+                ("local", ids[2], "confirmed", None),
+                ("local", ids[3], "confirmed", None),
+                ("local", ids[4], "resolved", None),
+            ]
+            for owner, memory_id, status, roadmap in fields:
+                conn.execute("""INSERT INTO learner_memories
+                    (owner,id,kind,statement,status,revision,language,roadmap_id,created_at,updated_at)
+                    VALUES (?,?,?,'Distinct private fixture',?,2,'en',?,'2099','2099')""",
+                             (owner, memory_id, "branch_fact" if memory_id == "sibling" else "preference", status, roadmap))
+            vectors = [("other" if index == 0 else "local", memory_id, 1 if index == 3 else 2,
+                        encoder.metadata["id"], 2, exemplar) for index, memory_id in enumerate(ids)]
+            vectors.append(("local", tentative["id"], tentative["revision"], encoder.metadata["id"], 2, exemplar))
+            conn.executemany("INSERT INTO learner_memory_vectors VALUES (?,?,?,?,?,?)", vectors)
+        selected = self.retrieval(encoder, note={"quote": "ACTIVE SELECTION " + "x" * 512})
+        self.assertEqual({item["id"] for item in selected}, {preference["id"], recurring["id"]})
+        self.assertEqual(len(encoder.requests[0].splitlines()[-1]), 256)
+        quiz_item = next(item for item in selected if item["id"] == recurring["id"])
+        self.assertEqual(set(quiz_item["provenance"]["attempt_ids"]), set(attempts))
+        path = f"{self.base}/{recurring['id']}"
+        item = self.client.get(path, params={"revision": recurring["revision"]}).json()
+        self.assertEqual({ref["attempt_id"] for ref in item["evidence"]}, set(attempts))
+        self.assertEqual(self.retrieval(encoder, "unrelated algebra"), [])
+        app.put(f"lesson:{self.rid}:{self.tid}", {**self.doc, "version": uuid4().hex})
+        self.assertEqual({item["id"] for item in self.retrieval(encoder)}, {preference["id"]})
+        self.assertEqual(self.client.get(path, params={"revision": recurring["revision"]}).status_code, 404)
+
+    def test_v2_restart_rebuild_and_concurrent_revision_changes(self):
+        self.capture(True)
+        items = [self.add_preference(f"Original preference {index}") for index in range(10)]
+        old = FakeMemoryEncoder()
+        for _ in range(2):
+            app.memory_retrieval.sync(app.db, old)
+        self.assertTrue(self.retrieval(old))
+        replacement = FakeMemoryEncoder("scripted-v2")
+        app.memory_retrieval.sync(app.db, replacement)
+        self.assertEqual(self.retrieval(replacement), [])
+        update, forget = sorted(items, key=lambda item: item["id"])[-2:]
+
+        def mutate_during_encoding(texts, *, query, deadline):
+            self.assertEqual(self.client.patch(f"{self.base}/{update['id']}",
+                json={"statement": "Updated preference", "revision": update["revision"]}).status_code, 200)
+            self.assertEqual(self.client.delete(f"{self.base}/{forget['id']}",
+                params={"revision": forget["revision"]}).status_code, 200)
+            return [[1.0, 0.0] for _ in texts]
+
+        restarted = FakeMemoryEncoder(replacement.metadata["id"])
+        with patch.object(restarted, "encode", side_effect=mutate_during_encoding):
+            app.memory_retrieval.sync(app.db, restarted)
+        self.assertEqual(self.retrieval(restarted), [])
+        app.memory_retrieval.sync(app.db, restarted)
+        self.assertTrue(self.retrieval(restarted))
+        with app.db() as conn:
+            vectors = conn.execute("SELECT memory_id, revision, encoder_id FROM learner_memory_vectors").fetchall()
+        self.assertEqual(len(vectors), 9)
+        self.assertTrue(all(encoder_id == restarted.metadata["id"] for _, _, encoder_id in vectors))
+        self.assertIn((update["id"], update["revision"]+1, restarted.metadata["id"]), vectors)
+        self.assertNotIn(forget["id"], {memory for memory, _, _ in vectors})
+
+    def test_v3_provider_budget_refs_retry_and_transcript(self):
+        self.capture(True)
+        memory = self.add_preference("Explain with drawings")
+        self.add_preference("a" * 1200)
+        encoder = FakeMemoryEncoder()
+        reply_text = "The old memory-assisted answer is visible only in the reader."
+        expected = [{"id": memory["id"], "revision": memory["revision"]}]
+        model = "scripted-codex"
+        tool = ResponseFunctionToolCall(type="function_call", name="calculator",
+            call_id="phase3-call", arguments='{"expression":"0.5*9.81*2**2"}')
+
+        with patch.dict(os.environ, {"STUDY_BOUNDED_CONTEXT": "1", "STUDY_TUTOR_CONTEXT_WINDOW": "12500",
+                                     "STUDY_TUTOR_MODEL_WINDOWS": "{}"}), patch.object(app, "memory_encoder", encoder):
+            app.memory_retrieval.sync(app.db, encoder)
+            for provider in ("openai", "codex"):
+                with self.subTest(provider=provider), ExitStack() as mocks:
+                    payloads = []
+                    phase = ["tool", "answer"]
+                    mocks.enter_context(patch.object(app, "ai_settings", return_value={
+                        "provider": provider, "codex_model": model}))
+
+                    def openai(**request):
+                        self.assertLessEqual(app.tutor_context.json_bytes(request), 12500-6144)
+                        prefix = app.prompt("providers/openai-context") + " "
+                        context = json.loads(request["input"][0]["content"].removeprefix(prefix))
+                        payloads.append((context, str(request["input"])))
+                        return SimpleNamespace(usage=None, output=[tool] if phase.pop(0) == "tool" else [],
+                                               output_text=reply_text)
+
+                    def codex(schema, schema_text, stdin, search, codex_model, usage, **kwargs):
+                        self.assertLessEqual(len(stdin.encode())+len(schema_text.encode()),
+                                             int(os.environ["STUDY_TUTOR_CONTEXT_WINDOW"])-6144)
+                        context = json.loads(stdin.rsplit("\n", 1)[-1])
+                        payloads.append((context["lesson"], stdin))
+                        return dict(action="calculator" if phase.pop(0) == "tool" else "answer",
+                                    arguments_json=tool.arguments, text=reply_text, sources=[])
+
+                    sdk = mocks.enter_context(patch.object(app.ai, "client")).return_value
+                    sdk.with_options.return_value = sdk
+                    sdk.responses.create.side_effect = openai
+                    mocks.enter_context(patch.object(app.providers, "run_codex", side_effect=codex))
+                    chat = f"/api/chat/{self.rid}/{self.tid}/question-{uuid4().hex}"
+                    request = {"text": "Giải thích cách đổi đơn vị", "request_id": str(uuid4())}
+                    first = self.client.post(chat, json=request)
+                    self.assertEqual(first.status_code, 200, first.text)
+                    saved = first.json()[-1]
+                    self.assertEqual(saved["memory_refs"], expected)
+                    self.assertAlmostEqual(saved["traces"][0]["output"]["result"], 19.62)
+                    self.assertEqual(len(payloads), 2)
+                    for context, _ in payloads:
+                        matches = context["learner_memories"]
+                        self.assertEqual([{k: item[k] for k in ("id", "revision")} for item in matches], expected)
+                        self.assertLessEqual(app.tutor_context.json_bytes({"learner_memories": matches}), 1024)
+                    if provider == "openai":
+                        self.assertEqual([call.kwargs for call in sdk.with_options.call_args_list],
+                                         [{"max_retries": 0}, {"max_retries": 0}])
+                    self.assertEqual(self.client.post(chat, json=request).json(), first.json())
+                    self.assertEqual(len(payloads), 2)
+                    self.capture(False)
+                    phase.append("answer")
+                    follow = self.client.post(chat, json={"text":"Follow-up while paused"})
+                    self.assertEqual(follow.status_code, 200, follow.text)
+                    self.assertNotIn("learner_memories", payloads[-1][0])
+                    self.assertNotIn(reply_text, payloads[-1][1])
+                    self.assertNotIn("memory_refs", follow.json()[-1])
+                    self.assertEqual(follow.json()[1], saved)
+                    self.capture(True)
+                    if provider == "codex":
+                        phase.append("answer")
+                        with patch.dict(os.environ, {"STUDY_TUTOR_CONTEXT_WINDOW": "10500"}):
+                            tighter = self.client.post(f"/api/chat/{self.rid}/{self.tid}/question-{uuid4().hex}",
+                                                       json=request)
+                        self.assertEqual(tighter.status_code, 200, tighter.text)
+                        self.assertNotIn("learner_memories", payloads[-1][0])
+                        self.assertNotIn("memory_refs", tighter.json()[-1])
+
+    def test_v3_revocation_during_provider_call_aborts_and_same_id_retries(self):
+        self.capture(True)
+        encoder = FakeMemoryEncoder()
+        calls = []
+
+        def provider(schema, schema_text, stdin, search, model, usage, **kwargs):
+            payload = json.loads(stdin.rsplit("\n", 1)[-1])
+            calls.append(payload["lesson"].get("learner_memories", []))
+            if len(calls) == 1:
+                removed = self.client.delete(f"{self.base}/{memory['id']}", params={"revision": memory["revision"]})
+                self.assertEqual(removed.status_code, 200, removed.text)
+                return {"action":action, "text":"Reply", "arguments_json":'{"expression":"2+3"}', "sources":[]}
+            return {"action":"answer", "text":"Reply", "arguments_json":"{}", "sources":[]}
+
+        with patch.dict(os.environ, {"STUDY_BOUNDED_CONTEXT": "1", "STUDY_TUTOR_MODEL_WINDOWS": "{}",
+                                     "STUDY_TUTOR_CONTEXT_WINDOW": "12500"}), \
+                patch.object(app, "memory_encoder", encoder), \
+                patch.object(app, "ai_settings", return_value={"provider": "codex"}), \
+                patch.object(app.providers, "run_codex", side_effect=provider):
+            for action in ("answer", "calculator"):
+                with self.subTest(action=action):
+                    memory = self.add_preference("Use diagrams")
+                    request = {"text": "Explain unit conversion", "request_id": str(uuid4())}
+                    chat = f"/api/chat/{self.rid}/{self.tid}/question-{uuid4().hex}"
+                    calls.clear()
+                    app.memory_retrieval.sync(app.db, encoder)
+                    stale = self.client.post(chat, json=request)
+                    self.assertEqual(stale.status_code, 409, stale.text)
+                    self.assertEqual(stale.headers["Retry-After"], "1")
+                    self.assertEqual(len(calls), 1)
+                    self.assertTrue(calls[0])
+                    self.assertEqual(self.client.get(chat).json(), [])
+                    retry = self.client.post(chat, json=request)
+                    self.assertEqual(retry.status_code, 200, retry.text)
+                    self.assertEqual(calls[1], [])
+                    self.assertEqual(len(retry.json()), 2)
+                    self.assertNotIn("memory_refs", retry.json()[-1])
+
+    def test_v1_optional_encoder_errors_and_timeouts_keep_chat_and_grading(self):
+        self.capture(True)
+        encoder = FakeMemoryEncoder()
+        self.add_preference("Use diagrams")
+        chat = f"/api/chat/{self.rid}/{self.tid}/main"
+
+        def slow_encode(texts, *, query, deadline):
+            sleep(max(0, deadline-monotonic()) + 0.01)
+            return [[1.0, 0.0] for _ in texts]
+
+        with patch.dict(os.environ, {"STUDY_BOUNDED_CONTEXT": "1"}), patch.object(app, "memory_encoder", encoder), \
+                patch.object(app.ai, "chat", return_value={"role":"assistant", "text":"Fallback reply"}) as tutor:
+            app.memory_retrieval.sync(app.db, encoder)
+            for status in ("missing", "error", "ready"):
+                with self.subTest(status=status), patch.object(encoder, "status", status), \
+                        patch.object(encoder, "encode", side_effect=slow_encode):
+                    if status != "ready":
+                        self.assertEqual(self.client.get(self.base).json()["encoder_status"], status)
+                    response = self.client.post(chat, json={"text": "Explain without optional retrieval"})
+                    self.assertEqual(response.status_code, 200, response.text)
+                    self.assertEqual(tutor.call_args.kwargs["working"].memories, [])
+                    self.assertEqual(response.json()[-1]["text"], "Fallback reply")
+            self.assertTrue(self.attempt(0, "1962 cm")["correct"])
 
 if __name__=="__main__":
     unittest.main()

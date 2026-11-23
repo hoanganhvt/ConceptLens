@@ -2,14 +2,20 @@ import {tr, language} from './language';
 import React,{useEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Lab} from './Lab';
-import {MemorySettings} from './MemorySettings';
+import {MemoriesUsed,MemorySettings} from './MemorySettings';
 import {formulas,renderMath,sourceText} from './math';
-import {api,type Road,type Bundle,type Topic,type Anchor,type Msg,type Progress} from './types';
+import {api,type Road,type Bundle,type Topic,type Anchor,type Msg,type Progress,type MemoryRef} from './types';
 import './style.css';
 
 function Dialog({title,children,close}:{title:string,children:React.ReactNode,close:()=>void}){
   const ref=useRef<HTMLDialogElement>(null);
-  useEffect(()=>{const d=ref.current!;const origin=document.activeElement as HTMLElement;d.showModal();return()=>{d.close();origin?.focus({preventScroll:true})}},[]);
+  useEffect(()=>{
+    const dialog=ref.current!;
+    const origin=document.activeElement as HTMLElement|null;
+    const summary=origin?.closest('details')?.querySelector('summary');
+    dialog.showModal();
+    return()=>{dialog.close();(origin?.isConnected?origin:summary)?.focus({preventScroll:true})};
+  },[]);
   return <dialog ref={ref} aria-label={title} onCancel={e=>{e.preventDefault();close()}}><header><h2>{title}</h2><button aria-label={tr("Đóng", "Close")} onClick={close}>×</button></header>{children}</dialog>
 }
 
@@ -38,8 +44,9 @@ function Cited({msg}:{msg:Msg}){
   return <>{parts}{renderMath(text.slice(last).join(''))}</>
 }
 type TutorThread={id:string,question:string};
+type MemoryNavigation={memoryEpoch:number,openMemory:(ref:MemoryRef)=>void};
 
-function Chat({path,onSaved}:{path:string,onSaved:(history:Msg[])=>void}){
+function Chat({path,onSaved,memoryEpoch,openMemory}:{path:string,onSaved:(history:Msg[])=>void}&MemoryNavigation){
   const [history,setHistory]=useState<Msg[]>([]),[text,setText]=useState(''),[search,setSearch]=useState(false),[busy,setBusy]=useState(false),[err,setErr]=useState(''),[loaded,setLoaded]=useState(false);
   const messages=useRef<HTMLDivElement>(null);
   const pending=useRef<{path:string,text:string,search:boolean,request_id:string}|null>(null);
@@ -61,14 +68,15 @@ function Chat({path,onSaved}:{path:string,onSaved:(history:Msg[])=>void}){
     }catch(e){setErr(String(e))}finally{setBusy(false)}
   }
   useEffect(()=>{if(messages.current)messages.current.scrollTop=messages.current.scrollHeight},[history]);
-  return <><div ref={messages} className="history" aria-live="polite">{history.map((m,i)=><div className={'msg '+m.role} key={i}><b>{m.role==='user'?tr("Bạn", "You"):tr("Gia sư", "Tutor")}</b><p><Cited msg={m}/></p>{!!m.traces?.length&&<details><summary>{tr("Phép kiểm chứng Python", "Python calculations")}</summary><pre>{JSON.stringify(m.traces,null,2)}</pre></details>}</div>)}</div>
+  return <><div ref={messages} className="history" aria-live="polite">{history.map((m,i)=><div className={'msg '+m.role} key={i}><b>{m.role==='user'?tr("Bạn", "You"):tr("Gia sư", "Tutor")}</b><p><Cited msg={m}/></p>{!!m.traces?.length&&<details><summary>{tr("Phép kiểm chứng Python", "Python calculations")}</summary><pre>{JSON.stringify(m.traces,null,2)}</pre></details>}
+    {!!m.memory_refs?.length&&<MemoriesUsed references={m.memory_refs} epoch={memoryEpoch} manage={openMemory}/>}</div>)}</div>
   <form onSubmit={submit}>
   <label>{tr("Câu hỏi của bạn", "Your question")}<textarea required disabled={busy} value={text} onChange={e=>setText(e.target.value)} placeholder={tr("Bạn muốn hiểu rõ điều gì?", "What would you like to understand?")}/></label><div className="actions"><label className="inline"><input type="checkbox" disabled={busy} checked={search} onChange={e=>setSearch(e.target.checked)}/>{tr("Tra cứu web", "Search the web")}</label><button className="primary" disabled={!loaded||busy}>{busy?tr("Đang trả lời…", "Thinking…"):tr("Gửi câu hỏi", "Send question")}</button></div>{err&&<p role="alert">{err}</p>}</form></>
 }
 
 function newThread(){return 'question-'+crypto.randomUUID().replaceAll('-','')}
 
-function TutorPanel({path,open,close,branch,setBranch,note}:{path:string,open:boolean,close:()=>void,branch:string,setBranch:(id:string)=>void,note?:Anchor}){
+function TutorPanel({path,open,close,branch,setBranch,note,memoryEpoch,openMemory}:{path:string,open:boolean,close:()=>void,branch:string,setBranch:(id:string)=>void,note?:Anchor}&MemoryNavigation){
   const [threads,setThreads]=useState<TutorThread[]>([]),[error,setError]=useState('');
   const panel=useRef<HTMLElement>(null);
   const saves=useRef(0);
@@ -102,12 +110,12 @@ function TutorPanel({path,open,close,branch,setBranch,note}:{path:string,open:bo
     {error&&<p role="alert">{error}</p>}
     <div className="tutor-conversation">
       {note&&<blockquote>{renderMath(note.quote)}{note.snapshot&&<small>{Object.entries(note.snapshot).map(([k,v])=>k+' = '+Number(v.toFixed(3))).join(' · ')}</small>}</blockquote>}
-      <Chat key={branch} path={path+'/'+branch} onSaved={saved}/>
+      <Chat key={branch} path={path+'/'+branch} onSaved={saved} memoryEpoch={memoryEpoch} openMemory={openMemory}/>
     </div>
   </section>
 }
 
-function Reader({road,topic,memoryEpoch}:{road:Road,topic:Topic,memoryEpoch:number}){
+function Reader({road,topic,memoryEpoch,openMemory}:{road:Road,topic:Topic}&MemoryNavigation){
   const path=road.id+'/'+topic.id;
   const [bundle,setBundle]=useState<Bundle|null>(null),[err,setErr]=useState(''),[busy,setBusy]=useState(false);
   const [tutorOpen,setTutorOpen]=useState(()=>window.location.hash==='#tutor'),[branch,setBranch]=useState(newThread);
@@ -195,12 +203,13 @@ function Reader({road,topic,memoryEpoch}:{road:Road,topic:Topic,memoryEpoch:numb
       onClick={()=>void rememberPattern(i,prev.attempt_id!)}>{tr('Ghi nhớ lỗi này','Remember this pattern')}</button>}
   </form>})}</section>
   {!!bundle.notes.length&&<details><summary>{tr("Các đoạn đã đánh dấu", "Highlighted passages")} ({bundle.notes.length})</summary>{bundle.notes.map(n=><button className="note" key={n.id} onClick={()=>openHighlight(n.id)}>{renderMath(n.quote)}</button>)}</details>}
-  </>}</article>{doc&&<TutorPanel path={path} open={tutorOpen} close={closeTutor} branch={branch} setBranch={setBranch} note={bundle?.notes.find(note=>note.id===branch)}/>}</div>
+  </>}</article>{doc&&<TutorPanel path={path} open={tutorOpen} close={closeTutor} branch={branch} setBranch={setBranch}
+    note={bundle?.notes.find(note=>note.id===branch)} memoryEpoch={memoryEpoch} openMemory={openMemory}/>}</div>
 }
 
 type AISettings={provider:'openai'|'codex',saved_key:boolean,environment_key:boolean,codex:'ready'|'logged_out'|'missing'|'unknown',codex_model:string|null,codex_models:{id:string,name:string}[]};
 
-function Settings({close,onMemoryPolicyChange}:{close:()=>void,onMemoryPolicyChange:()=>void}){
+function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMemoryPolicyChange:()=>void,focusMemory?:MemoryRef}){
   const [settings,setSettings]=useState<AISettings|null>(null),[key,setKey]=useState(''),[remove,setRemove]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   useEffect(()=>{let active=true;api<AISettings>('settings').then(s=>{if(active)setSettings(s)}).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[]);
@@ -223,11 +232,11 @@ function Settings({close,onMemoryPolicyChange}:{close:()=>void,onMemoryPolicyCha
     </select></label></>}
     <button className="primary" disabled={busy}>{busy?tr("Đang lưu…", "Saving…"):tr("Lưu cài đặt", "Save settings")}</button>
   </form>:!error&&<p>{tr("Đang đọc cài đặt…", "Loading settings…")}</p>}{error&&<p role="alert">{error}</p>}
-  <MemorySettings onMemoryPolicyChange={onMemoryPolicyChange}/></Dialog>
+  <MemorySettings onMemoryPolicyChange={onMemoryPolicyChange} focusMemory={focusMemory}/></Dialog>
 }
 
 function App(){
-  const [showSettings,setShowSettings]=useState(false);
+  const [settingsTarget,setSettingsTarget]=useState<MemoryRef|'general'|null>(null);
   const [memoryEpoch,setMemoryEpoch]=useState(0);
   const [roads,setRoads]=useState<Road[]>([]),[selected,setSelected]=useState(()=>localStorage.getItem('selected')||(language==='en'?'physics/free-fall':'vat-ly/roi-tu-do')),[planner,setPlanner]=useState<'new'|'revise'|null>(null),[err,setErr]=useState('');
   useEffect(()=>{api<Road[]>('roads').then(setRoads).catch(e=>setErr(String(e)))},[]);
@@ -239,11 +248,12 @@ function App(){
     const samples:Record<string,string>={'vat-ly/roi-tu-do':'physics/free-fall','vat-ly/gia-toc':'physics/acceleration','physics/free-fall':'vat-ly/roi-tu-do','physics/acceleration':'vat-ly/gia-toc'};
     if(samples[selected])localStorage.setItem('selected',samples[selected]);
     window.location.reload();
-  }}><option value="vi" lang="vi">Tiếng Việt</option><option value="en" lang="en">English</option></select><button onClick={()=>setShowSettings(true)}>{tr("Cài đặt", "Settings")}</button><button onClick={()=>setPlanner('new')}>{tr("＋ Tạo lộ trình", "＋ Create roadmap")}</button></div></header>
-  {showSettings&&<Settings close={()=>setShowSettings(false)} onMemoryPolicyChange={()=>setMemoryEpoch(n=>n+1)}/>}
+  }}><option value="vi" lang="vi">Tiếng Việt</option><option value="en" lang="en">English</option></select><button onClick={()=>setSettingsTarget('general')}>{tr("Cài đặt", "Settings")}</button><button onClick={()=>setPlanner('new')}>{tr("＋ Tạo lộ trình", "＋ Create roadmap")}</button></div></header>
+  {settingsTarget&&<Settings close={()=>setSettingsTarget(null)} focusMemory={settingsTarget==='general'?undefined:settingsTarget}
+    onMemoryPolicyChange={()=>setMemoryEpoch(n=>n+1)}/>}
   {err&&<p role="alert">{err}</p>}{road&&topic&&<div className="layout"><aside><label>{tr("Lộ trình của bạn", "Your roadmap")}<select value={road.id} onChange={e=>{const r=roads.find(x=>x.id===e.target.value)!;choose(r,r.chapters[0].topics[0])}}>{roads.map(r=><option key={r.id} value={r.id}>{r.title}</option>)}</select></label>
     {road.chapters.map((c,i)=><div key={i}><h3>{c.title}</h3>{c.topics.map(t=><button key={t.id} className={'topic '+(t.id===topic.id?'selected':'')} aria-current={t.id===topic.id?'page':undefined} onClick={()=>choose(road,t)}>{t.title}</button>)}</div>)}
-    <button className="revise" onClick={()=>setPlanner('revise')}>{tr("Tạo phiên bản mới", "Create new version")}</button></aside><main><Reader key={road.id+'/'+topic.id} road={road} topic={topic} memoryEpoch={memoryEpoch}/></main></div>}
+    <button className="revise" onClick={()=>setPlanner('revise')}>{tr("Tạo phiên bản mới", "Create new version")}</button></aside><main><Reader key={road.id+'/'+topic.id} road={road} topic={topic} memoryEpoch={memoryEpoch} openMemory={setSettingsTarget}/></main></div>}
     {planner&&<Planner base={planner==='revise'?road:null} close={()=>setPlanner(null)} done={r=>{setRoads([r,...roads]);choose(r,r.chapters[0].topics[0]);setPlanner(null)}}/>}</>
 }
 createRoot(document.getElementById('root')!).render(<App/>);

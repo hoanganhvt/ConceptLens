@@ -6,16 +6,19 @@ import logging
 import math
 import os
 import re
-from time import perf_counter
+import sqlite3
+from time import monotonic, perf_counter
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
+from . import memory_retrieval
 from .chat_state import OWNER
 from .language import language, tr
 
 SUMMARY_FORMAT = 1
 TOOL_BYTES = 1024
+MEMORY_BYTES = 1024
 ESTIMATOR = "utf8-json-v1"
 MOTION_UNITS = {"acceleration": "m/s²", "velocity": "m/s", "duration": "s",
                 "t": "s", "s": "m", "v": "m/s"}
@@ -127,6 +130,12 @@ def complete_turns(history):
             if history[index]["role"] == "user" and history[index + 1]["role"] == "assistant"]
 
 
+def model_history(history):
+    return [({"role": "assistant", "text": "[Prior memory-assisted reply omitted.]"}
+             if message["role"] == "assistant" and message.get("memory_refs") else message)
+            for message in history]
+
+
 def observations(sequence, pair):
     for index, trace in reversed(list(enumerate(pair[1].get("traces", [])))):
         tool, output = trace.get("tool"), trace.get("output")
@@ -143,13 +152,15 @@ def observations(sequence, pair):
 
 
 class WorkingContext:
-    def __init__(self, db, rid, tid, branch, required, optional, history, budget):
+    def __init__(self, db, rid, tid, branch, required, optional, history, budget, *, generation=None, memories=()):
         self.key = (OWNER, rid, tid, required["lesson_version"], branch, SUMMARY_FORMAT)
+        self.db, self.rid, self.generation = db, rid, generation
+        self.memories, self.sent = memories, []
         with db() as conn:
             row = conn.execute("""SELECT covered, content FROM tutor_summaries
                 WHERE owner=? AND roadmap=? AND topic=? AND lesson_version=? AND branch=? AND format=?""",
                 self.key).fetchone()
-        self.turns = complete_turns(history)
+        self.turns = complete_turns(model_history(history))
         self.required = required
         self.optional = optional
         self.verified = []
@@ -162,7 +173,7 @@ class WorkingContext:
         self.budget = budget
         self.pending = None
 
-    def pack(self, fits, *, details=True):
+    def pack(self, fits, *, details=True, memories=()):
         context, recent = dict(self.required), []
         if not fits(context, recent):
             raise too_large()
@@ -189,7 +200,43 @@ class WorkingContext:
                 candidate = {**context, key: value}
                 if fits(candidate, recent):
                     context = candidate
+            for item in memories:
+                selected = [*context.get("learner_memories", []), item]
+                candidate = {**context, "learner_memories": selected}
+                if json_bytes({"learner_memories": selected}) <= MEMORY_BYTES and fits(candidate, recent):
+                    context = candidate
         return context, recent
+
+    def verify(self, conn):
+        try:
+            memory_retrieval.validate(conn, self.rid, self.generation, self.sent, required=True)
+        except sqlite3.Error as exc:
+            raise memory_retrieval.changed() from exc
+
+    def for_provider(self, fits):
+        if not self.memories:
+            return self.pack(fits)
+        try:
+            with memory_retrieval.short_read(self.db, monotonic() + 0.025) as conn:
+                self.verify(conn)
+                valid = memory_retrieval.validate(conn, self.rid, self.generation, self.memories, required=False)
+        except sqlite3.Error as exc:
+            if self.sent:
+                raise memory_retrieval.changed() from exc
+            valid = []
+        context, recent = self.pack(fits, memories=valid)
+        for item in context.get("learner_memories", []):
+            reference = {key: item[key] for key in ("id", "revision")}
+            if reference not in self.sent:
+                self.sent.append(reference)
+        return context, recent
+
+    def verify_current(self):
+        try:
+            with memory_retrieval.short_read(self.db, monotonic() + 0.025) as conn:
+                self.verify(conn)
+        except sqlite3.Error as exc:
+            raise memory_retrieval.changed() from exc
 
     def compact(self, fits, summary_fits, summarize):
         _, recent = self.pack(fits, details=False)

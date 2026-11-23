@@ -91,16 +91,20 @@ def codex_chat(context, history, question, search, model, working=None, renew=No
     data = dict(lesson=context,history=history,question=question,tools=tool_definitions(),results=[])
     instruction = prompt("tutor/instructions", "tutor/codex-tools")
     budget = working.budget if working else None
+    memory_instruction = instruction
     if working:
         instruction += "\n\n" + prompt("tutor/working-context")
+        memory_instruction = instruction + ("\n\n" + prompt("tutor/learner-memory") if working.memories else "")
         summary_instruction = prompt("tutor/summary")
         data["search_enabled"] = search
         overhead = providers.codex_overhead(TutorStep, instruction)
+        memory_overhead = providers.codex_overhead(TutorStep, memory_instruction) if working.memories else overhead
         summary_overhead = providers.codex_overhead(Summary, summary_instruction)
 
         def fits(ctx, recent):
             payload = providers.codex_context({**data, "lesson": ctx, "history": recent})
-            return overhead + len(payload.encode()) <= budget.input_limit
+            prefix_size = memory_overhead if "learner_memories" in ctx else overhead
+            return prefix_size + len(payload.encode()) <= budget.input_limit
 
         working.compact(fits,
                         lambda prefix: summary_overhead + len(providers.codex_context(prefix).encode()) <= budget.input_limit,
@@ -111,9 +115,11 @@ def codex_chat(context, history, question, search, model, working=None, renew=No
     for _ in range(6):
         data["search_enabled"] = search and not searched
         if working:
-            data["lesson"], data["history"] = working.pack(fits)
-        step = providers.codex_result(TutorStep, instruction, data, search=data["search_enabled"], model=model,
-                                      budget=budget, renew=renew)
+            data["lesson"], data["history"] = working.for_provider(fits)
+        instructions = memory_instruction if "learner_memories" in data["lesson"] else instruction
+        guard = {"pre_send": working.verify_current} if working and working.sent else {}
+        step = providers.codex_result(TutorStep, instructions, data, search=data["search_enabled"], model=model,
+                                      budget=budget, renew=renew, **guard)
         if data["search_enabled"]:
             searched = True
         if searched:
@@ -138,12 +144,15 @@ def codex_chat(context, history, question, search, model, working=None, renew=No
     raise HTTPException(502,tr("Đã đạt giới hạn lượt gọi công cụ. Hãy thu hẹp câu hỏi.", "The tool call limit was reached. Try a more specific question."))
 
 
-def openai_call(api, request, budget, renew, kind="tutor"):
+def openai_call(api, request, budget, renew, kind="tutor", *, pre_send=None):
     if renew:
         renew()
     if budget is None:
         return api.responses.create(**request)
     with budget.measure(json_bytes(request), kind) as usage:
+        if pre_send:
+            api = api.with_options(max_retries=0)
+            pre_send()
         result = api.responses.create(**request)
         if result.usage:
             usage.update(input_tokens=result.usage.input_tokens, output_tokens=result.usage.output_tokens)
@@ -162,12 +171,14 @@ def chat(context, history, question, search, *, settings, working=None, renew=No
     budget = working.budget if working else None
     if working:
         instruction += "\n\n" + prompt("tutor/working-context")
+    memory_instruction = instruction + ("\n\n" + prompt("tutor/learner-memory") if working and working.memories else "")
 
     def request(ctx, recent, step):
         messages = [{"role": "developer", "content": wrapper + json.dumps(ctx, ensure_ascii=False)}]
         messages.extend({"role": m["role"], "content": m["text"]} for m in recent)
         messages.append({"role": "user", "content": question})
-        result = dict(model=MODEL, instructions=instruction, input=messages + continuation, tools=tools, store=False,
+        instructions = memory_instruction if "learner_memories" in ctx else instruction
+        result = dict(model=MODEL, instructions=instructions, input=messages + continuation, tools=tools, store=False,
                       tool_choice={"type": "web_search"} if search and step == 0 else "auto")
         if working:
             result["max_output_tokens"] = 4096
@@ -194,9 +205,10 @@ def chat(context, history, question, search, *, settings, working=None, renew=No
     try:
         for step in range(6):
             if working:
-                context, history = working.pack(
+                context, history = working.for_provider(
                     lambda ctx, recent: json_bytes(request(ctx, recent, step)) <= budget.input_limit)
-            result = openai_call(api, request(context, history, step), budget, renew)
+            guard = working.verify_current if working and working.sent else None
+            result = openai_call(api, request(context, history, step), budget, renew, pre_send=guard)
             continuation.extend(result.output)
             calls = []
             for item in result.output:

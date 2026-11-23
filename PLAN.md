@@ -21,7 +21,24 @@ Before marking a delivery phase's implementation complete, save an architecture 
 
 Delegate testing to a separate subagent using the saved requirements, test checklist, and delivery phase's exit check. The testing subagent records each test as `Pass`, `Fail`, or `Blocked` with evidence and reports defects without changing product code. The coordinating agent reviews the evidence, sends in-scope fixes back to the implementation subagent, and has the testing subagent rerun affected checks. Repeat until the completion conditions are met or a blocker requires user input.
 
-Write an English report in `result/` listing the delivered functionality, test results, and any outstanding items. Prefix the delivery phase title with `done` only after the planned implementation is complete, every mandatory requirement and exit check has passed in the test phase, and the report is saved.
+After testing a phase, save its English verification report, benchmark documents, verification code, and recorded evidence together in `result/<phase-id>/`. Use the same phase ID as the plan file. For example:
+
+```text
+result/
+└── phase-0/
+    ├── document.md
+    ├── benchmark.md
+    ├── code/
+    └── evidence/
+```
+
+- In `document.md`, list delivered functionality, test results, and outstanding items. Record each verification ID and exit check, the source revision tested, the command and prerequisites, the expected result, and the observed result.
+- In `code/`, save the exact test scripts, benchmark runners, and synthetic fixtures used for the reported checks. Keep shared tests in their normal repository locations and archive the versions used for verification in the phase folder.
+- In `evidence/`, save the relevant outputs from those runs, such as test logs, assertion results, screenshots, or benchmark measurements. Use synthetic data and exclude credentials and private learner data.
+- In `benchmark.md` or other benchmark documents for the phase, explain the setup, metrics, measured results, and limitations. Link to the benchmark code and raw measurements.
+- In each report or benchmark document, use relative links to the relevant files in `code/` and `evidence/`. Explain which assertion or measurement proves the expected behavior, how the recorded output confirms it, and what claim the check supports. If a check is manual or blocked, record its steps and available evidence, and state what remains unverified.
+
+Prefix the delivery phase title with `done` only after the planned implementation is complete, every mandatory requirement and exit check has passed in the test phase, and the phase folder contains the report and its linked verification artifacts.
 
 ## Intended outcome
 

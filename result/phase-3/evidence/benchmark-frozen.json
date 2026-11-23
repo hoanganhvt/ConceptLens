@@ -1,0 +1,16 @@
+{
+  "cutoffs": {
+    "bm25": 17.547991122391956,
+    "static": 0.5546997435552757,
+    "e5": 0.8690909908571657,
+    "bekko": 0.5021596914367942
+  },
+  "exploratory_winner": null,
+  "dev_evidence_sha256": {
+    "bm25": "fd4efbd99d520e735599b14a9ce36ffdf301f8aa2b78d7a949bae91e5e4c4eb5",
+    "static": "1c0faf104221c7b8576e486906ac327ab9390acfd0c47de08b3fefd39438f023",
+    "e5": "dfeda7467e7575e998c369db7774034e005d04f66b935965ea9ad0ed3f173892",
+    "bekko": "e37dc575e91450a6f7deeebc7d1118635a47f2d7a7b26b411b84c4b6dca2c076"
+  },
+  "qualified": false
+}

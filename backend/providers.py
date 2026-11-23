@@ -134,17 +134,18 @@ def validation_issues(error):
     )
 
 
-def codex_result(schema, instructions, context, search=False, *, model=None, budget=None, renew=None, kind="tutor"):
+def codex_result(schema, instructions, context, search=False, *, model=None, budget=None, renew=None, kind="tutor",
+                 pre_send=None):
     schema_text, prompt_text = codex_request(schema, instructions, context)
     size = len(schema_text.encode()) + len(prompt_text.encode())
     measurement = budget.measure(size, kind) if budget else nullcontext({})
     with measurement as usage:
         if renew:
             renew()
-        return run_codex(schema, schema_text, prompt_text, search, model, usage)
+        return run_codex(schema, schema_text, prompt_text, search, model, usage, pre_send=pre_send)
 
 
-def run_codex(schema, schema_text, prompt_text, search, model, usage):
+def run_codex(schema, schema_text, prompt_text, search, model, usage, *, pre_send=None):
     exe = shutil.which("codex")
     status = cli_status(exe)
     if status == "missing":
@@ -161,6 +162,8 @@ def run_codex(schema, schema_text, prompt_text, search, model, usage):
             args.extend(["--model", model])
         args.append("-")
         try:
+            if pre_send:
+                pre_send()
             result = subprocess.run(args,input=prompt_text,encoding="utf-8",errors="replace",capture_output=True,
                                     timeout=180,cwd=folder,env=cli_environment(),
                                     creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0))

@@ -1,0 +1,72 @@
+{
+  "base_git_revision": "62d6cc4766e0ab9d4726058de84a79fc876a6876",
+  "commands": [
+    "npm.cmd run build",
+    "npm.cmd run test:ui",
+    ".venv/Scripts/python.exe -B -m unittest discover -v -s tests",
+    ".venv/Scripts/python.exe -B tests/evals/runner.py --output result/phase-3/evidence",
+    ".venv/Scripts/python.exe -B tests/evals/runner.py --bounded --output result/phase-3/evidence"
+  ],
+  "replay": {
+    "replay": {
+      "cases": 32,
+      "turns": 216,
+      "http_statuses": [
+        200,
+        503
+      ]
+    },
+    "bounded": {
+      "cases": 4,
+      "turns": 100,
+      "http_statuses": [
+        200
+      ]
+    }
+  },
+  "runnable_source_sha256": {
+    "backend/ai.py": "1a46c1617a694b4b17c6c7998836baff62d8b80d68c06a78a7cb770082c8c38a",
+    "backend/chat_state.py": "2df0cb4e0e88f86d637344c4b048a2e043761baf8601ba4757e2257d5622df8e",
+    "backend/demo.py": "88fa549deaf4e5e37a71b64add5937e51d035fa5ab44798a69fce3fcf7229bdc",
+    "backend/embedding_cpu.py": "a9f24d6518690f4d6acb414417089412396f9a5ee9dcd8058aff473e414475e8",
+    "backend/embedding_process.py": "b6bdd9edb52a4f9dfe1987bb95e13f11be5f3503748c36e78c3c53f62c706f67",
+    "backend/language.py": "0f1041f7cad3e315f1eb187f823f4b4b5f4adea9bff6ee437e667f118d5e2fd2",
+    "backend/learner_memory.py": "6e3c464ec773c16493190b6e0704ef2b605ad01db933ddc9a67042ce435cf7da",
+    "backend/main.py": "97ecd87e2e4e8439a0970d7504cb0335ae242117bb10045c958c4a1a025e1bef",
+    "backend/memory_retrieval.py": "08b8ea1f34fbc064d1365af125a35b627a69fe50e55786f5c0492620a6f3dbdd",
+    "backend/models.py": "7fe60223a201555cc58f93d0828e94c01f3ae36ab91ddac7d8d88249a38ab4bb",
+    "backend/physics.py": "8b78742f5a049602835c103792126668dca6d1836b8150d666425020b8190fdc",
+    "backend/prompt_files.py": "9e89c6e82ee63e86deaeb7210e1f4d4d691ff40d7c95eab2dca2309f426f3b21",
+    "backend/providers.py": "47ce4edaef81332be1d084b008626c8a47d7266b4464113bd25b0428ff322eb7",
+    "backend/tutor_context.py": "87f9b6c04b7eca72dc2d085136daf14ed1a0984f9bb627f123f72b4f89f2cf67",
+    "package-lock.json": "b5581c04223eb63b9ce5cd178427e86a34189affef462ee4323c12736172b771",
+    "package.json": "e70e60c987df982d5705bbbfd52218e5b045f6c8f1c565bf2c289959f369c910",
+    "prompts/illustrations/contract.md": "f483e936b97e5e0b0b25a239d37f3b0e1c04b6350e8c280b5820138e0f30f447",
+    "prompts/illustrations/repair.md": "223f9d04b3dbae5b50ea48ee4cc7191dbb0ec88cb5b1294737ebc3e5bf8500d8",
+    "prompts/lessons/generate.md": "0dca0e50bcab409dfd0a7b5a753b0f506e87f2e8f49253573f7f2763f2c36ff7",
+    "prompts/providers/codex-context.md": "85bd5bb64564ee7025e067bb4d895e2052ecfc6d93b72e2037ed22e79a100326",
+    "prompts/providers/openai-context.md": "ce0bbc9cde14dd43091f346542c84d268c8bf431b0f91cd9a633737ba0fbd273",
+    "prompts/roadmaps/draft.md": "edd393ae95dbba3d8ad2eb6e458117749716fb9ab6511b63d6517a2574281668",
+    "prompts/tools/calculator.md": "9dcfd9040f2b06310bf5a49fd6e1bf5783e08cf2a481b2006ed1a78bfc1efc21",
+    "prompts/tools/simulate_motion.md": "da5a2febdfe94fe7d758d71a86df7aabce1b984c623e65661b8effc794508100",
+    "prompts/tutor/codex-tools.md": "8f02122f893195b9d3c2643097c81b8b77a4855da2a1721a13f9a8eff57a3334",
+    "prompts/tutor/instructions.md": "16d46a6c135b4f2c6c1ee27e3ae89dbbecb363c2a3440773719b9ebb14786708",
+    "prompts/tutor/learner-memory.md": "c7496ef1284f3415ec35f0069ede8a46888bbbc698dea3a815693e581b5cd67f",
+    "prompts/tutor/summary.md": "26d7db94a5cefd1b1a02a96f9e13716b2e95fbc9199e888cb3171d9b6dd5459c",
+    "prompts/tutor/working-context.md": "73e0e49671d8e42f9f8f4129902cc910dd9f0243fbb338975adec46c7549ced3",
+    "requirements.txt": "0899afa1da0fad25614179e5955cda382969c3a8421c0daf69c74f25185489b0",
+    "src/env.d.ts": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+    "src/frame.js": "c3fd9f9a1629b9e807e6bff12b6dad6128fdf5046d61ccd85539e543610ec72b",
+    "src/Lab.tsx": "f8e3beb2c29c5a7ca8f855001d6e284c7dae09f77c3807bbfcebde2d10232b61",
+    "src/language.ts": "81714e74f7d85cc887101861fe113053837ba932dc9bbe2e489863932b77804e",
+    "src/main.tsx": "f1301efad2f00308df9e0f95717c3861ef3a554c5a16be084266caddabac7819",
+    "src/math.tsx": "da8447ba2aed81b7a3bc6ac8d88b749a1407e21c4d556e724fcbdc946eb60fc4",
+    "src/MemorySettings.tsx": "8e459651d4d99877df67b855921256c3e4dfd11caf53b866169c64a05acf7c03",
+    "src/style.css": "293c8b70b8a332d000f4e48cb1ea03f8c15593db1b17accb3e6061cb3b801696",
+    "src/types.ts": "46c5b010a7a3d907c124d95fe5e017a7764cf02f75d862c5284c3452bee200d5",
+    "tests/browser.mjs": "12deb8ef6c541bc012b97b7733ab50cf79db3a1bd1a5d506426e3eeff8da8d79",
+    "tests/evals/fixtures.py": "b941b4b98905861806d33b650717638bcac469dad8305bd0e735000fb2912e2a",
+    "tests/evals/runner.py": "c4af87b8628c1dbfa825fa5d0056c75656be866c6436d7d501d2579786672c21",
+    "tests/test_study.py": "8a5d4790153103cde732c5a10a412c4a09423bda35807e9d3c44586b1401da01"
+  }
+}

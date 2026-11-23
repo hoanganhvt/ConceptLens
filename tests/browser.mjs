@@ -268,16 +268,33 @@ try{
   await secondDistance.getByText('Try again.',{exact:true}).waitFor();
   const recurring=await waitForMemory('recurring');
   assert.equal(recurring.evidence.length,2);
-  await englishSettings.click();
+  const englishMemoryThread=[{role:'user',text:'My unit mistake'},{role:'assistant',text:'Review units.',
+    memory_refs:[{id:recurring.id,revision:recurring.revision}]}];
+  conversations.set('phase3-verification',englishMemoryThread);
+  await openTutor.click();
+  await tutor.getByRole('button',{name:'My unit mistake',exact:true}).click();
+  const memoriesUsed=tutor.getByText('Memories used',{exact:true});
+  await memoriesUsed.press('Enter');
+  await tutor.getByRole('button',{name:'View attempt 1',exact:true}).press('Enter');
+  await tutor.getByText('19.62 s',{exact:false}).waitFor();
+  await tutor.getByRole('button',{name:'Open memory in Settings',exact:true}).press('Enter');
+  const mistake=memoryDialog.locator('article').filter({hasText:recurring.statement});
+  await mistake.waitFor();
+  await page.waitForFunction(item=>item===document.activeElement,await mistake.elementHandle());
+  if(process.env.STUDY_VERIFICATION_ARTIFACTS)
+    await page.screenshot({path:join(process.env.STUDY_VERIFICATION_ARTIFACTS,'verification-memory-settings-en.png')});
   await memoryDialog.getByRole('button',{name:'View attempt 1',exact:true}).click();
   await memoryDialog.getByText('19.62 s',{exact:false}).waitFor();
   await memoryDialog.getByRole('button',{name:'View attempt 2',exact:true}).click();
   await memoryDialog.getByText('42 s',{exact:false}).waitFor();
-  const mistake=memoryDialog.locator('article').filter({hasText:recurring.statement});
   await mistake.getByRole('button',{name:'Edit memory',exact:true}).click();
   await mistake.getByRole('textbox',{name:/^Edited memory/}).fill('Review dimensional compatibility first');
   await mistake.getByRole('button',{name:'Save changes',exact:true}).click();
   await memoryDialog.getByText('Review dimensional compatibility first',{exact:true}).waitFor();
+  await memoryDialog.getByRole('button',{name:'Close',exact:true}).press('Enter');
+  await tutor.getByText('This memory is no longer available.',{exact:true}).waitFor();
+  await tutor.getByText('Review units.',{exact:true}).waitFor();
+  await englishSettings.click();
   const [pauseResponse]=await Promise.all([
     page.waitForResponse(response=>response.url().endsWith('/api/memories/capture')&&response.request().method()==='PUT'),
     capture.press('Space'),
@@ -291,7 +308,19 @@ try{
 
   await page.getByLabel('Language').selectOption('vi');
   await page.getByRole('heading',{name:'Sự rơi tự do',exact:true}).waitFor();
-  await settingsButton.click();
+  const correctedMemory=(await memoryList()).memories.find(item=>item.id===recurring.id);
+  const viThread=[{role:'user',text:'Lỗi đơn vị'},{role:'assistant',text:'Ôn đơn vị.',
+    memory_refs:[{id:correctedMemory.id,revision:correctedMemory.revision}]}];
+  await page.route('**/api/chat/vat-ly/roi-tu-do',route=>route.fulfill({json:[{id:'phase3-verification',question:'Lỗi đơn vị'}]}));
+  await page.route('**/api/chat/vat-ly/roi-tu-do/*',route=>route.fulfill({
+    json:route.request().url().endsWith('/phase3-verification')?viThread:[]}));
+  await page.getByRole('button',{name:'Hỏi gia sư',exact:true}).press('Enter');
+  await tutor.getByRole('button',{name:'Lỗi đơn vị',exact:true}).press('Enter');
+  await tutor.getByText('Ký ức đã dùng',{exact:true}).press('Enter');
+  await tutor.getByText('Review dimensional compatibility first',{exact:true}).waitFor();
+  if(process.env.STUDY_VERIFICATION_ARTIFACTS)
+    await page.screenshot({path:join(process.env.STUDY_VERIFICATION_ARTIFACTS,'verification-memory-disclosure-vi.png')});
+  await tutor.getByRole('button',{name:'Mở ký ức trong Cài đặt',exact:true}).press('Enter');
   await memoryDialog.getByRole('heading',{name:'Bộ nhớ học tập',exact:true}).waitFor();
   assert.equal(await memoryDialog.getByRole('checkbox',{name:'Bật bộ nhớ học tập'}).isChecked(),false);
   await memoryDialog.getByText('Practice converting units',{exact:true}).waitFor();
@@ -302,8 +331,10 @@ try{
   await corrected.getByRole('button',{name:'Quên bộ nhớ',exact:true}).click();
   await corrected.getByRole('button',{name:'Xác nhận quên',exact:true}).click();
   await corrected.waitFor({state:'detached'});
+  await memoryDialog.getByRole('button',{name:'Đóng',exact:true}).press('Enter');
+  await tutor.getByText('Ký ức này không còn khả dụng.',{exact:true}).waitFor();
   const original=await (await fetch(base+'/api/lesson/physics/free-fall')).json();
   assert.equal(original.progress['0'].filter(item=>item.attempt_id===attempts[0].attempt_id).length,1);
-  console.log('Browser checks passed: illustration, grading, LaTeX, highlights, conversation history, tutor panel, API settings, learner memory and mobile width.');
+  console.log('Browser checks passed: illustration, grading, LaTeX, highlights, conversation history, tutor panel, API settings, bilingual keyboard memory disclosure, stale references, exact quiz evidence, and mobile width.');
 }finally{await browser?.close();server.kill()}
 

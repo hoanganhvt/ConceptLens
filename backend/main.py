@@ -19,7 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, StrictBool
 from urllib.parse import urlsplit
-from . import ai, chat_state, learner_memory, providers, tutor_context
+from . import ai, chat_state, learner_memory, memory_retrieval, providers, tutor_context
+from .embedding_process import EncoderProcess
 from .prompt_files import prompt
 from .demo import ROAD, SAMPLE, ROAD_EN, SAMPLE_EN
 from .language import language, tr
@@ -29,29 +30,39 @@ from .physics import assess, motion
 ROOT = Path(__file__).resolve().parents[1]
 DATA = Path(os.getenv("STUDY_DATA", ROOT / "data"))
 DATA.mkdir(exist_ok=True, parents=True)
+memory_encoder = EncoderProcess(os.getenv("STUDY_EMBEDDING_MODEL_DIR"))
+
+
+def maintain_memory_index(db, encoder):
+    if os.getenv("STUDY_BOUNDED_CONTEXT") == "1":
+        memory_retrieval.sync(db, encoder)
+    else:
+        encoder.close()
 
 
 @asynccontextmanager
 async def lifespan(app):
     stop = asyncio.Event()
 
-    async def collect():
+    async def collect(action, name, *args):
         while not stop.is_set():
             try:
-                await run_in_threadpool(learner_memory.process_pending, db)
+                await run_in_threadpool(action, db, *args)
             except Exception as exc:
-                logging.getLogger(__name__).warning("Learner memory worker unavailable (%s)", type(exc).__name__)
+                logging.getLogger(__name__).warning("%s unavailable (%s)", name, type(exc).__name__)
             try:
                 await asyncio.wait_for(stop.wait(), timeout=1)
             except TimeoutError:
                 pass
 
-    worker = asyncio.create_task(collect())
+    workers = (asyncio.create_task(collect(learner_memory.process_pending, "Learner memory worker")),
+               asyncio.create_task(collect(maintain_memory_index, "Memory index worker", memory_encoder)))
     try:
         yield
     finally:
         stop.set()
-        await worker
+        await asyncio.gather(*workers)
+        await run_in_threadpool(memory_encoder.close)
 
 
 app = FastAPI(docs_url=None, redoc_url=None, lifespan=lifespan)
@@ -95,6 +106,9 @@ with db() as conn:
     if version < 2:
         learner_memory.migrate(conn)
         conn.execute("PRAGMA user_version=2")
+    if version < 3:
+        memory_retrieval.migrate(conn)
+        conn.execute("PRAGMA user_version=3")
 
 
 def get_record(conn, key, default=None):
@@ -323,11 +337,17 @@ async def validation_error(request: Request, exc: RequestValidationError):
     return await request_validation_exception_handler(request, exc)
 
 
+def memory_list(conn):
+    result = learner_memory.list_memories(conn, memory_road_title)
+    result["encoder_status"] = memory_retrieval.encoder_status(conn, memory_encoder)
+    return result
+
+
 @app.get("/api/memories")
 def memories():
     with db() as conn:
         conn.execute("BEGIN")
-        return learner_memory.list_memories(conn, memory_road_title)
+        return memory_list(conn)
 
 
 @app.post("/api/memories")
@@ -335,7 +355,7 @@ def create_memory(body: NewMemory):
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         learner_memory.create(conn, body.kind, memory_statement(body))
-        return learner_memory.list_memories(conn, memory_road_title)
+        return memory_list(conn)
 
 
 @app.put("/api/memories/capture")
@@ -343,7 +363,7 @@ def capture_memory(body: MemoryCapture):
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         learner_memory.set_enabled(conn, body.enabled)
-        return learner_memory.list_memories(conn, memory_road_title)
+        return memory_list(conn)
 
 
 @app.post("/api/memories/resume")
@@ -351,7 +371,20 @@ def resume_memory(body: ResumeMemory):
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         learner_memory.resume(conn, str(body.attempt_id))
-        return learner_memory.list_memories(conn, memory_road_title)
+        return memory_list(conn)
+
+
+@app.get("/api/memories/{memory_id}")
+def read_memory(memory_id: str, revision: int = Query(ge=1)):
+    with db() as conn:
+        conn.execute("BEGIN")
+        row = learner_memory.record(conn, memory_id, revision)
+        source = memory_retrieval.provenance(conn, row)
+        if not source:
+            raise learner_memory.not_found()
+        memory = learner_memory.public_memory(conn, row, memory_road_title)
+        memory["evidence"] = [ref for ref in memory["evidence"] if ref["attempt_id"] in source.get("attempt_ids", ())]
+        return memory
 
 
 @app.patch("/api/memories/{memory_id}")
@@ -359,7 +392,7 @@ def edit_memory(memory_id: str, body: EditMemory):
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         learner_memory.edit(conn, memory_id, body.revision, memory_statement(body))
-        return learner_memory.list_memories(conn, memory_road_title)
+        return memory_list(conn)
 
 
 @app.delete("/api/memories/{memory_id}")
@@ -367,7 +400,7 @@ def forget_memory(memory_id: str, revision: int = Query(ge=1)):
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         learner_memory.forget(conn, memory_id, revision)
-        return learner_memory.list_memories(conn, memory_road_title)
+        return memory_list(conn)
 
 
 @app.get("/api/memories/{memory_id}/evidence/{attempt_id}")
@@ -462,6 +495,7 @@ def send(rid:str,tid:str,branch:str,body:Message):
     try:
         settings = ai_settings()
         working = None
+        model_history = tutor_context.model_history(history)
         if os.getenv("STUDY_BOUNDED_CONTEXT") == "1":
             provider = settings.get("provider", "openai")
             model = (settings.get("codex_model") or "default") if provider == "codex" else ai.MODEL
@@ -469,14 +503,20 @@ def send(rid:str,tid:str,branch:str,body:Message):
             ctx, optional = tutor_context.evidence(
                 doc, topic, note, get(f"progress:{rid}:{tid}", {}),
                 lambda index: get(f"motion:{rid}:{tid}:{index}"), body.text)
-            working = tutor_context.WorkingContext(db, rid, tid, branch, ctx, optional, history, budget)
+            current_note = note if note and note["version"] == doc["version"] else None
+            generation, memories = memory_retrieval.retrieve(db, memory_encoder, rid, topic, current_note, body.text)
+            working = tutor_context.WorkingContext(db, rid, tid, branch, ctx, optional, model_history, budget,
+                                                   generation=generation, memories=memories)
         else:
             ctx = dict(topic=topic, sections=doc["sections"], illustrations=[
                 {k: x[k] for k in ("title", "instruction", "explanation")} for x in doc["illustrations"]])
             if note:
                 ctx["highlight"] = note
-        reply = ai.chat(ctx, history, body.text, body.search, settings=settings, working=working, renew=reservation.renew)
-        result = reservation.commit(dict(role="user", text=body.text), reply, working.pending if working else None)
+        reply = ai.chat(ctx, model_history, body.text, body.search, settings=settings, working=working, renew=reservation.renew)
+        if working and working.sent:
+            reply["memory_refs"] = working.sent
+        result = reservation.commit(dict(role="user", text=body.text), reply, working.pending if working else None,
+                                    verify=working.verify if working and working.sent else None)
     except BaseException:
         reservation.release()
         raise
