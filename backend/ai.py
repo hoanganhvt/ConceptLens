@@ -6,7 +6,7 @@ from openai import OpenAI, APIError
 from fastapi import HTTPException
 from typing import Literal
 from pydantic import BaseModel, ValidationError
-from . import providers
+from . import google_providers, providers
 from .prompt_files import prompt
 from .models import Illustration, IllustrationBatch, LessonDraft, Motion
 from .physics import calculate, motion
@@ -22,22 +22,42 @@ def client(settings):
     return OpenAI(api_key=key, timeout=90, max_retries=1)
 
 
+def model_for(settings):
+    provider = settings.get("provider", "openai")
+    return settings.get(f"{provider}_model") or {"openai": MODEL, "gemini": google_providers.GEMINI_MODEL}.get(provider)
+
+
+def json_result(schema, instructions, context, *, settings, search_events=None, **options):
+    if settings["provider"] == "codex":
+        return providers.codex_result(schema, instructions, context, search_events=search_events, **options)
+    return google_providers.result(schema, instructions, context, settings=settings, **options)
+
+
+def json_request_size(schema, instructions, context, provider):
+    if provider == "codex":
+        return sum(len(part.encode()) for part in providers.codex_request(schema, instructions, context))
+    return google_providers.request_size(google_providers.request_for(schema, instructions, context, provider))
+
+
 def structured(schema, instructions, context, *, settings):
     provider = settings.get("provider", "openai")
-    visual_model = settings.get(f"{provider}_visual_model") if schema in (IllustrationBatch, Illustration) else None
-    if provider == "codex":
-        model = visual_model or settings.get("codex_model")
+    is_visual = schema in (IllustrationBatch, Illustration)
+    if is_visual and settings.get("visual_provider"):
+        provider = settings["visual_provider"]
+    settings = {**settings, "provider": provider}
+    model = (settings.get(f"{provider}_visual_model") if is_visual else None) or model_for(settings)
+    if provider != "openai":
         try:
-            return providers.codex_result(schema, instructions, context, model=model)
+            return json_result(schema, instructions, context, settings=settings, model=model)
         except HTTPException as exc:
             error = exc.__cause__
             if schema not in (LessonDraft, IllustrationBatch) or not isinstance(error, ValidationError):
                 raise
             correction = "\n\nGenerate the complete response again. Correct these validation issues: "
-            return providers.codex_result(schema, instructions + correction + providers.validation_issues(error),
-                                          context, model=model)
+            return json_result(schema, instructions + correction + providers.validation_issues(error),
+                               context, settings=settings, model=model)
     try:
-        parsed = client(settings).responses.parse(model=visual_model or MODEL, instructions=instructions, input=json.dumps(context, ensure_ascii=False),
+        parsed = client(settings).responses.parse(model=model, instructions=instructions, input=json.dumps(context, ensure_ascii=False),
                                           text_format=schema, store=False).output_parsed
         if parsed is None:
             raise ValueError()
@@ -90,7 +110,11 @@ def tool_output(action, arguments, bounded):
         return None, {"error": error[:200] if bounded else error}
 
 
-def codex_chat(context, history, question, search, model, working=None, renew=None):
+def json_chat(context, history, question, search, settings, working=None, renew=None):
+    provider = settings["provider"]
+    if search and provider != "codex":
+        google_providers.require_web_provider()
+    model = model_for(settings)
     data = dict(lesson=context,history=history,question=question,tools=tool_definitions(),results=[])
     instruction = prompt("tutor/instructions", "tutor/codex-tools")
     budget = working.budget if working else None
@@ -100,19 +124,15 @@ def codex_chat(context, history, question, search, model, working=None, renew=No
         memory_instruction = instruction + ("\n\n" + prompt("tutor/learner-memory") if working.memories else "")
         summary_instruction = prompt("tutor/summary")
         data["search_enabled"] = search
-        overhead = providers.codex_overhead(TutorStep, instruction)
-        memory_overhead = providers.codex_overhead(TutorStep, memory_instruction) if working.memories else overhead
-        summary_overhead = providers.codex_overhead(Summary, summary_instruction)
-
         def fits(ctx, recent):
-            payload = providers.codex_context({**data, "lesson": ctx, "history": recent})
-            prefix_size = memory_overhead if "learner_memories" in ctx else overhead
-            return prefix_size + len(payload.encode()) <= budget.input_limit
+            instructions = memory_instruction if "learner_memories" in ctx else instruction
+            payload = {**data, "lesson": ctx, "history": recent}
+            return json_request_size(TutorStep, instructions, payload, provider) <= budget.input_limit
 
         working.compact(fits,
-                        lambda prefix: summary_overhead + len(providers.codex_context(prefix).encode()) <= budget.input_limit,
-                        lambda prefix: providers.codex_result(Summary, summary_instruction, prefix, model=model,
-                                                             budget=budget, renew=renew, kind="summary"))
+                        lambda prefix: json_request_size(Summary, summary_instruction, prefix, provider) <= budget.input_limit,
+                        lambda prefix: json_result(Summary, summary_instruction, prefix, settings=settings, model=model,
+                                                   budget=budget, renew=renew, kind="summary"))
     traces, sources = [], {}
     searched = False
     for _ in range(6):
@@ -121,8 +141,8 @@ def codex_chat(context, history, question, search, model, working=None, renew=No
             data["lesson"], data["history"] = working.for_provider(fits)
         instructions = memory_instruction if "learner_memories" in data["lesson"] else instruction
         guard = {"pre_send": working.verify_current} if working and working.sent else {}
-        step = providers.codex_result(TutorStep, instructions, data, search=data["search_enabled"], model=model,
-                                      budget=budget, renew=renew, **guard)
+        step = json_result(TutorStep, instructions, data, settings=settings, search=data["search_enabled"], model=model,
+                           budget=budget, renew=renew, **guard)
         if data["search_enabled"]:
             searched = True
         if searched:
@@ -169,8 +189,8 @@ def openai_call(api, request, budget, renew, kind="tutor", *, pre_send=None, rem
 
 
 def chat(context, history, question, search, *, settings, working=None, renew=None):
-    if settings.get("provider") == "codex":
-        return codex_chat(context, history, question, search, settings.get("codex_model"), working, renew)
+    if settings.get("provider", "openai") != "openai":
+        return json_chat(context, history, question, search, settings, working, renew)
     instruction = prompt("tutor/instructions")
     api = client(settings)
     wrapper = prompt("providers/openai-context") + " "

@@ -1,4 +1,4 @@
-"""Shared dispatch policy for the OpenAI and Codex tutor adapters."""
+"""Shared dispatch policy for the tutor model adapters."""
 
 from copy import deepcopy
 from dataclasses import dataclass
@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from openai import APIError, APITimeoutError
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat
 
-from . import ai, providers
+from . import ai, google_providers, providers
 from .language import tr
 from .models import Motion
 from .physics import motion_point
@@ -203,15 +203,17 @@ def local_tool(target, args, context):
 
 class Adapter:
     def __init__(self, settings, question, working, renew, turn):
-        self.codex = settings.get("provider") == "codex"
-        self.model = settings.get("codex_model") if self.codex else ai.MODEL
-        self.api = None if self.codex else ai.client(settings)
+        self.settings = settings
+        self.provider = settings.get("provider", "openai")
+        self.json_mode = self.provider != "openai"
+        self.model = ai.model_for(settings)
+        self.api = None if self.json_mode else ai.client(settings)
         self.question, self.working, self.renew, self.turn = question, working, renew, turn
         self.budget = working.budget if working else None
         self.tools, self.continuation = definitions(), []
-        self.wrapper = prompt("providers/openai-context") + " " if not self.codex else ""
+        self.wrapper = prompt("providers/openai-context") + " " if not self.json_mode else ""
         self.instructions = prompt("tutor/instructions", "tutor/agent")
-        if self.codex:
+        if self.json_mode:
             self.instructions += "\n\n" + prompt("tutor/agent-codex")
         if working:
             self.instructions += "\n\n" + prompt("tutor/working-context")
@@ -221,7 +223,7 @@ class Adapter:
 
     def request(self, context, history, search):
         instructions = self.memory_instruction if context.get("learner_memories") else self.instructions
-        if self.codex:
+        if self.json_mode:
             return instructions, dict(lesson=context, history=history, question=self.question,
                                       tools=self.tools, results=self.continuation, search_enabled=search)
         messages = [{"role": "developer", "content": self.wrapper + json.dumps(context, ensure_ascii=False)}]
@@ -237,8 +239,8 @@ class Adapter:
                     max_output_tokens=4096, **options)
 
     def size(self, request, schema):
-        if self.codex:
-            return sum(len(part.encode()) for part in providers.codex_request(schema, *request))
+        if self.json_mode:
+            return ai.json_request_size(schema, *request, self.provider)
         return json_bytes(request)
 
     def guard(self):
@@ -247,11 +249,11 @@ class Adapter:
     def send(self, request, schema, *, kind="tutor", search=False, guard=None, search_events=None):
         self.turn.remaining()
         try:
-            if self.codex:
-                return providers.codex_result(schema, *request, search=search, model=self.model, budget=self.budget,
-                                              renew=self.renew, kind=kind, pre_send=guard,
-                                              remaining=self.turn.remaining,
-                                              search_events={} if search_events is None else search_events)
+            if self.json_mode:
+                return ai.json_result(schema, *request, settings=self.settings, search=search, model=self.model,
+                                      budget=self.budget, renew=self.renew, kind=kind, pre_send=guard,
+                                      remaining=self.turn.remaining,
+                                      search_events={} if search_events is None else search_events)
             return ai.openai_call(self.api, request, self.budget, self.renew, kind,
                                   pre_send=guard, remaining=self.turn.remaining)
         except APITimeoutError:
@@ -261,7 +263,7 @@ class Adapter:
                                         "Could not connect to OpenAI. Please try again.")) from exc
 
     def structured_request(self, schema, instructions, context):
-        if self.codex:
+        if self.json_mode:
             return instructions, context
         fmt = {"type": "json_schema", "name": schema.__name__, "strict": True,
                "schema": providers.to_strict_json_schema(schema)}
@@ -269,9 +271,9 @@ class Adapter:
 
     def structured(self, request, schema, kind):
         result = self.send(request, schema, kind=kind, guard=self.guard())
-        if not self.codex and any(item.type in ("web_search_call", "function_call") for item in result.output):
+        if not self.json_mode and any(item.type in ("web_search_call", "function_call") for item in result.output):
             raise ValueError("Unexpected tool call in structured response")
-        parsed = schema.model_validate(result) if self.codex else schema.model_validate_json(result.output_text)
+        parsed = schema.model_validate(result) if self.json_mode else schema.model_validate_json(result.output_text)
         return parsed.model_dump()
 
     def compact(self, search):
@@ -290,7 +292,7 @@ class Adapter:
         return self.size(self.request(context, history, search), AgentStep) <= self.budget.input_limit
 
     def observe(self, action, observation):
-        if self.codex:
+        if self.json_mode:
             self.continuation.append({"action": action.target if action.target in CALLOUTS else "unknown",
                                       "output": observation})
         else:
@@ -299,7 +301,7 @@ class Adapter:
 
     def decide(self, context, history, search):
         request = self.request(context, history, search)
-        if self.codex:
+        if self.json_mode:
             search_events = {"completed": 0}
             step = self.send(request, AgentStep, search=search, guard=self.guard(), search_events=search_events)
             action = step["action"]
@@ -338,6 +340,8 @@ def search_failed():
 
 def run(context, history, question, search, settings, working, renew, turn):
     turn.remaining()
+    if search and settings.get("provider") in ("agy", "gemini"):
+        google_providers.require_web_provider()
     adapter = Adapter(settings, question, working, renew, turn)
     adapter.compact(search)
     if not working:
@@ -383,7 +387,7 @@ def run(context, history, question, search, settings, working, renew, turn):
                 if args and args.text.strip():
                     return reply(args.text, sources, traces, search, turn, "clarify")
         turn.charge(len(decision.actions))
-        if search_now and adapter.codex:
+        if search_now and adapter.json_mode:
             links = [{"url": source["url"], "title": source["title"]} for source in sources.values()]
             if links and json_bytes(links) <= TOOL_BYTES:
                 adapter.continuation.append({"action": "web_search", "output": {"sources": links}})

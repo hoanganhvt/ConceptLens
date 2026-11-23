@@ -37,14 +37,18 @@ The checks below use automated backend tests, browser tests, and scripted OpenAI
 
 ## AI providers
 
-Open **Settings**, select a provider, and save. The selection applies to the next generation or tutor request, including follow-ups in saved threads. Roadmap drafting, lesson generation, illustration repair, and tutor replies use the chosen provider. Saved lessons, simulations, and quiz grading run locally.
+Open **Settings**, select an **AI provider**, and save. That source handles roadmap drafts, lesson text, and tutor replies, including follow-ups in saved threads. Saved lessons, simulations, and quiz grading run locally.
 
-Use **Illustration model** in Settings to choose a separate model for building and repairing illustrations. Codex CLI uses its model list and OpenAI accepts a model ID. A blank field uses the lesson model. New lessons use one request for the teaching text and scene plan, then a separate request for the illustrations.
+Use **Illustration provider** and **Illustration model** to configure who builds and repairs illustrations. The illustration provider defaults to the lesson provider, and a blank illustration model uses the selected provider's general model. New lessons request the teaching text and scene plan first, then the illustrations.
 
 | Provider | Setup |
 | --- | --- |
 | **OpenAI API** | Enter a key in Settings or set `OPENAI_API_KEY` before launch. A saved key takes precedence and Windows protects it with DPAPI. Set `OPENAI_MODEL` before launch to override the default `gpt-4.1`. |
 | **Codex CLI** | Install the CLI on the server's `PATH`. Run `codex login` and check `codex login status` in the same Windows account and terminal that starts ConceptLens. Choose a model in Settings or use the CLI default. |
+| **Google Gemini API** | Save a Gemini API key from Google AI Studio in Settings or set `GEMINI_API_KEY` or `GOOGLE_API_KEY` before launch. After saving a key, reopen Settings and use **Load Gemini models**. The default Gemini model is `gemini-3.6-flash`; use `GEMINI_MODEL` or the per-source model field to override it. |
+| **Google Antigravity CLI (agy)** | Put `agy` on the server's `PATH` and run it in a terminal to sign in. Use **Load agy models** or paste a model slug from `agy models`. ConceptLens submits one structured prompt at a time from a temporary workspace. |
+
+Tutor web search is available with OpenAI and Codex CLI. The Gemini and agy tutor flows can still use ConceptLens's local calculator and physics simulation.
 
 ### Tutor context and learner memory
 

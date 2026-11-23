@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 from .prompt_files import prompt
 
 from fastapi import HTTPException
@@ -19,15 +19,24 @@ from openai.lib._pydantic import to_strict_json_schema
 
 
 log = logging.getLogger("uvicorn.error").getChild("providers")
+Provider = Literal["openai", "codex", "gemini", "agy"]
+GoogleModel = Annotated[str, Field(max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")]
 
 
 class SettingsUpdate(BaseModel):
-    provider: Literal["openai", "codex"]
+    provider: Provider
+    visual_provider: Provider | None = None
     codex_model: str | None = Field(default=None, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
     codex_visual_model: str | None = Field(default=None, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
     openai_visual_model: str | None = Field(default=None, max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._:-]*$")
+    gemini_model: GoogleModel | None = None
+    gemini_visual_model: GoogleModel | None = None
+    agy_model: GoogleModel | None = None
+    agy_visual_model: GoogleModel | None = None
     api_key: SecretStr | None = Field(default=None, max_length=1024)
+    google_api_key: SecretStr | None = Field(default=None, max_length=1024)
     remove_key: bool = False
+    remove_google_key: bool = False
 
 
 class Blob(ctypes.Structure):
@@ -36,7 +45,7 @@ class Blob(ctypes.Structure):
 
 def crypt(data: bytes, encrypt: bool):
     if os.name != "nt":
-        raise HTTPException(422, tr("Hãy cấu hình OPENAI_API_KEY bằng biến môi trường trên hệ điều hành này.", "Set the OPENAI_API_KEY environment variable on this operating system."))
+        raise HTTPException(422, tr("Dùng biến môi trường để đặt API key trên hệ điều hành này.", "Set your API key through an environment variable on this operating system."))
     buffer = ctypes.create_string_buffer(data)
     source = Blob(len(data), ctypes.cast(buffer, ctypes.c_void_p))
     target = Blob()
@@ -52,27 +61,36 @@ def crypt(data: bytes, encrypt: bool):
 
 def updated(current, body):
     record = dict(current, provider=body.provider)
-    for field in ("codex_model", "codex_visual_model", "openai_visual_model"):
+    for field in ("visual_provider", "codex_model", "codex_visual_model", "openai_visual_model",
+                  "gemini_model", "gemini_visual_model", "agy_model", "agy_visual_model"):
         if field in body.model_fields_set:
             record[field] = getattr(body, field)
-    if body.remove_key:
-        record.pop("key", None)
-    elif body.api_key is not None:
-        value = body.api_key.get_secret_value().strip()
-        if not value or not value.isascii() or any(c.isspace() for c in value):
-            raise HTTPException(422, tr("API key không hợp lệ.", "Invalid API key."))
-        record["key"] = base64.b64encode(crypt(value.encode(), True)).decode()
+    for field, secret, remove in (("key", body.api_key, body.remove_key),
+                                  ("google_key", body.google_api_key, body.remove_google_key)):
+        if remove:
+            record.pop(field, None)
+        elif secret is not None:
+            value = secret.get_secret_value().strip()
+            if not value or not value.isascii() or any(c.isspace() for c in value):
+                raise HTTPException(422, tr("API key không hợp lệ.", "Invalid API key."))
+            record[field] = base64.b64encode(crypt(value.encode(), True)).decode()
     return record
 
 
-def api_key(record):
-    if record.get("key"):
-        return crypt(base64.b64decode(record["key"]), False).decode()
-    return os.getenv("OPENAI_API_KEY")
+def google_environment_key():
+    return os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+
+
+def api_key(record, *, google=False):
+    field = "google_key" if google else "key"
+    if record.get(field):
+        return crypt(base64.b64decode(record[field]), False).decode()
+    return google_environment_key() if google else os.getenv("OPENAI_API_KEY")
 
 
 def cli_environment():
-    return {k:v for k,v in os.environ.items() if k.upper() not in {"OPENAI_API_KEY","CODEX_API_KEY"}}
+    return {k:v for k,v in os.environ.items()
+            if k.upper() not in {"OPENAI_API_KEY", "CODEX_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY"}}
 
 
 def cli_status(executable, *, timeout=8):
@@ -112,8 +130,10 @@ def public_settings(record):
     executable = shutil.which("codex")
     return dict(provider=record.get("provider","openai"), saved_key=bool(record.get("key")),
                 environment_key=bool(os.getenv("OPENAI_API_KEY")), codex=cli_status(executable),
-                codex_model=record.get("codex_model"), codex_models=codex_models(executable),
-                codex_visual_model=record.get("codex_visual_model"), openai_visual_model=record.get("openai_visual_model"))
+                codex_models=codex_models(executable), agy_available=bool(shutil.which("agy")),
+                google_saved_key=bool(record.get("google_key")), google_environment_key=bool(google_environment_key()),
+                **{field: record.get(field) for field in ("visual_provider", "codex_model", "codex_visual_model",
+                    "openai_visual_model", "gemini_model", "gemini_visual_model", "agy_model", "agy_visual_model")})
 
 
 def codex_request(schema, instructions, context):
@@ -124,11 +144,6 @@ def codex_request(schema, instructions, context):
 
 def codex_context(context):
     return json.dumps(context, ensure_ascii=False)
-
-
-def codex_overhead(schema, instructions):
-    schema_text, stdin = codex_request(schema, instructions, {})
-    return len(schema_text.encode()) + len(stdin.encode()) - 2
 
 
 def validation_issues(error):

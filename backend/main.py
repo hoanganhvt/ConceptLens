@@ -19,7 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from pydantic import BaseModel, Field, StrictBool
 from urllib.parse import urlsplit
-from . import ai, chat_state, learner_memory, memory_retrieval, providers, tutor_agent, tutor_context
+from . import ai, chat_state, google_providers, learner_memory, memory_retrieval, providers, tutor_agent, tutor_context
 from .embedding_process import EncoderProcess
 from .prompt_files import prompt
 from .demo import ROAD, SAMPLE, ROAD_EN, SAMPLE_EN
@@ -142,6 +142,11 @@ def ai_settings():
 @app.get("/api/settings")
 def settings():
     return providers.public_settings(ai_settings())
+
+
+@app.get("/api/settings/models/{provider}")
+def google_models(provider: Literal["gemini", "agy"]):
+    return google_providers.model_catalog(provider, ai_settings())
 
 
 settings_lock = Lock()
@@ -341,6 +346,8 @@ def memory_statement(body):
 
 @app.exception_handler(RequestValidationError)
 async def validation_error(request: Request, exc: RequestValidationError):
+    if request.url.path == "/api/settings":
+        return JSONResponse({"detail": tr("Cài đặt AI không hợp lệ.", "Invalid AI settings.")}, 422)
     if request.url.path == "/api/memories" or request.url.path.startswith("/api/memories/"):
         return JSONResponse({"detail": tr("Dữ liệu bộ nhớ không hợp lệ.", "Invalid learner memory input.")}, 422)
     return await request_validation_exception_handler(request, exc)
@@ -515,7 +522,7 @@ def send_turn(rid, tid, branch, body, turn):
         model_history = tutor_context.model_history(history)
         if os.getenv("STUDY_BOUNDED_CONTEXT") == "1":
             provider = settings.get("provider", "openai")
-            model = (settings.get("codex_model") or "default") if provider == "codex" else ai.MODEL
+            model = ai.model_for(settings) or "default"
             budget = tutor_context.Budget(provider, model)
             ctx, optional = tutor_context.evidence(
                 doc, topic, note, get(f"progress:{rid}:{tid}", {}),

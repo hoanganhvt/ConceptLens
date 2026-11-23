@@ -8,6 +8,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing
 from copy import deepcopy
+from io import BytesIO
 from pathlib import Path
 from subprocess import CompletedProcess, run
 from threading import Event
@@ -61,6 +62,67 @@ class Study(unittest.TestCase):
         self.assertRaises(ValueError, calculate, "4**1000")
         data = app.motion(Motion())
         self.assertAlmostEqual(data["points"][120]["s"],19.62)
+
+    def test_gemini_and_agy_split_lesson_and_illustrations(self):
+        road = app.commit(Roadmap.model_validate(ROAD))
+        rid, tid = road["id"], road["chapters"][0]["topics"][0]["id"]
+        lesson, visuals = planned_sample()
+        settings = {"provider": "gemini", "gemini_model": "gemini-fixture",
+                    "visual_provider": "agy", "agy_visual_model": "gemini-cli-fixture"}
+        body = {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": json.dumps(lesson)}]}}]}
+        outputs = iter([visuals, visuals["illustrations"][0]])
+
+        def agy(args, *, input, cwd, env, **options):
+            self.assertIn("--sandbox", args)
+            self.assertNotIn("GOOGLE_API_KEY", env)
+            permissions = json.loads(args[args.index("--settings") + 1])["permissions"]
+            self.assertIn("command(*)", permissions["deny"])
+            self.assertIn("read_file(*)", permissions["deny"])
+            self.assertEqual(args[args.index("--model") + 1], "gemini-cli-fixture")
+            self.assertNotEqual(Path(cwd), app.ROOT)
+            self.assertEqual(json.loads(input)["event"], "user")
+            envelope = {"event": "result", "result": {"status": "SUCCESS", "structured_output": next(outputs)}}
+            return CompletedProcess(args, 0, json.dumps(envelope), "")
+
+        with patch.object(app, "ai_settings", return_value=settings), \
+             patch.dict(os.environ, {"GOOGLE_API_KEY": "fixture-google-key"}), \
+             patch.object(app.google_providers, "urlopen", return_value=BytesIO(json.dumps(body).encode())) as request, \
+             patch.object(app.google_providers.shutil, "which", return_value="agy"), \
+             patch.object(app.google_providers.subprocess, "run", side_effect=agy) as cli:
+            doc = app.generate(rid, tid)
+            self.assertEqual(doc["illustrations"], visuals["illustrations"])
+            app.repair(rid, tid, 0, app.Repair(error="Render error", manual=True))
+        req = request.call_args.args[0]
+        self.assertEqual(req.full_url, app.google_providers.GEMINI_URL + "models/gemini-fixture:generateContent")
+        self.assertEqual(req.get_header("X-goog-api-key"), "fixture-google-key")
+        self.assertIn("illustration_plan", json.loads(req.data)["generationConfig"]["responseJsonSchema"]["properties"])
+        self.assertEqual(cli.call_count, 2)
+
+    def test_google_tutor_uses_local_tools_and_rejects_web_search_explicitly(self):
+        for provider in ("gemini", "agy"):
+            with self.subTest(provider=provider):
+                settings = {"provider": provider}
+                outputs = [dict(action="calculator", arguments_json='{"expression":"2+3"}', text="", sources=[]),
+                           dict(action="answer", arguments_json="{}", text="5", sources=[])]
+                for route in (app.ai.chat, app.tutor_agent.chat):
+                    with patch.object(app.google_providers, "result", side_effect=outputs) as model:
+                        result = route({}, [], "2+3", False, settings=settings)
+                        self.assertEqual(result["traces"][0]["output"], {"result": 5})
+                        with self.assertRaises(HTTPException) as failure:
+                            route({}, [], "search", True, settings=settings)
+                        self.assertEqual(failure.exception.status_code, 422)
+                        self.assertEqual(model.call_count, 2)
+
+    def test_google_model_catalogs(self):
+        models = {"models": [
+            {"name": "models/gemini-flash", "displayName": "Gemini Flash", "supportedGenerationMethods": ["generateContent"]},
+            {"name": "models/gemini-flash-tts", "displayName": "Gemini TTS", "supportedGenerationMethods": ["generateContent"]},
+        ]}
+        agy = CompletedProcess([], 0, "gemini-flash-low    Gemini Flash (Low)\n", "")
+        with patch.object(app.google_providers, "gemini_request", return_value=models), \
+             patch.object(app.google_providers, "agy_command", return_value=agy):
+            self.assertEqual(app.google_models("gemini"), [{"id": "gemini-flash", "name": "Gemini Flash"}])
+            self.assertEqual(app.google_models("agy"), [{"id": "gemini-flash-low", "name": "Gemini Flash (Low)"}])
 
     def test_lesson_retries_invalid_codex_output(self):
         road = app.commit(Roadmap.model_validate(ROAD))
