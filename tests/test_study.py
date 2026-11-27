@@ -8,7 +8,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack, closing
 from copy import deepcopy
-from io import BytesIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from subprocess import CompletedProcess, run
 from threading import Event
@@ -67,10 +67,13 @@ class Study(unittest.TestCase):
         road = app.commit(Roadmap.model_validate(ROAD))
         rid, tid = road["id"], road["chapters"][0]["topics"][0]["id"]
         lesson, visuals = planned_sample()
+        second = {**visuals["illustrations"][0], "section": 1}
+        visuals["illustrations"].append(second)
+        lesson["illustration_plan"].append({"section": 1, "brief": second["instruction"]})
         settings = {"provider": "gemini", "gemini_model": "gemini-fixture",
                     "visual_provider": "agy", "agy_visual_model": "gemini-cli-fixture"}
         body = {"candidates": [{"finishReason": "STOP", "content": {"parts": [{"text": json.dumps(lesson)}]}}]}
-        outputs = iter([visuals, visuals["illustrations"][0]])
+        outputs = iter([*({"illustrations": [scene]} for scene in visuals["illustrations"]), visuals["illustrations"][0]])
 
         def agy(args, *, input, cwd, env, **options):
             self.assertIn("--sandbox", args)
@@ -80,15 +83,21 @@ class Study(unittest.TestCase):
             self.assertIn("read_file(*)", permissions["deny"])
             self.assertEqual(args[args.index("--model") + 1], "gemini-cli-fixture")
             self.assertNotEqual(Path(cwd), app.ROOT)
-            self.assertEqual(json.loads(input)["event"], "user")
-            envelope = {"event": "result", "result": {"status": "SUCCESS", "structured_output": next(outputs)}}
+            event = json.loads(input)
+            self.assertEqual(event["event"], "user")
+            output = next(outputs)
+            if "illustrations" in output:
+                context = json.loads(event["message"]["content"].split("\n")[-1])
+                self.assertEqual([entry["section"] for entry in context["illustration_plan"]],
+                                 [scene["section"] for scene in output["illustrations"]])
+            envelope = {"event": "result", "result": {"status": "SUCCESS", "structured_output": output}}
             return CompletedProcess(args, 0, json.dumps(envelope), "")
 
         with patch.object(app, "ai_settings", return_value=settings), \
              patch.dict(os.environ, {"GOOGLE_API_KEY": "fixture-google-key"}), \
              patch.object(app.google_providers, "urlopen", return_value=BytesIO(json.dumps(body).encode())) as request, \
              patch.object(app.google_providers.shutil, "which", return_value="agy"), \
-             patch.object(app.google_providers.subprocess, "run", side_effect=agy) as cli:
+             patch.object(app.google_providers, "run_agy_process", side_effect=agy) as cli:
             doc = app.generate(rid, tid)
             self.assertEqual(doc["illustrations"], visuals["illustrations"])
             app.repair(rid, tid, 0, app.Repair(error="Render error", manual=True))
@@ -96,7 +105,129 @@ class Study(unittest.TestCase):
         self.assertEqual(req.full_url, app.google_providers.GEMINI_URL + "models/gemini-fixture:generateContent")
         self.assertEqual(req.get_header("X-goog-api-key"), "fixture-google-key")
         self.assertIn("illustration_plan", json.loads(req.data)["generationConfig"]["responseJsonSchema"]["properties"])
-        self.assertEqual(cli.call_count, 2)
+        self.assertEqual(cli.call_count, 3)
+
+    def test_agy_lesson_uses_longer_timeout(self):
+        lesson, _ = planned_sample()
+        settings = {"provider": "agy", "agy_model": "gemini-flash-high"}
+        with patch.object(app.google_providers, "agy_result", return_value=(lesson, {})) as cli:
+            self.assertEqual(app.ai.structured(LessonDraft, "lesson", {}, settings=settings), lesson)
+            self.assertEqual(cli.call_args.args[1:], ("gemini-flash-high", 360))
+
+    def test_agy_print_timeout_rejects_partial_success(self):
+        partial = json.dumps({"event": "result", "result": {
+            "status": "SUCCESS", "finished_reason": "print_timeout", "structured_output": ROAD,
+        }})
+        for response in (CompletedProcess([], 0, partial, ""),
+                         CompletedProcess([], 3, "", "[agy] print timeout after 2s\n")):
+            with self.subTest(exit_code=response.returncode), \
+                 patch.object(app.google_providers, "agy_command", return_value=response):
+                with self.assertRaises(HTTPException) as failure:
+                    app.ai.structured(Roadmap, "plan", {}, settings={"provider": "agy"})
+                self.assertEqual(failure.exception.status_code, 504)
+
+    def test_agy_process_bounds_combined_stdout_and_stderr(self):
+        agy = app.google_providers
+        with tempfile.TemporaryDirectory() as folder, patch.object(agy.shutil, "which", return_value=sys.executable), \
+             patch.object(agy, "AGY_OUTPUT_LIMIT", 1024):
+            code = "import os, sys; data = sys.stdin.buffer.read(); os.write(1, data); os.write(2, b'z' * 512)"
+            completed = agy.agy_command(["-c", code], timeout=3, folder=folder, stdin="a" * 512)
+            self.assertEqual(completed.returncode, 0)
+            self.assertEqual((completed.stdout, completed.stderr), ("a" * 512, "z" * 512))
+
+            code = "import os, time; os.write(1, b'x' * 512); os.write(2, b'y' * 513); time.sleep(15)"
+            children = []
+            original = agy.subprocess.Popen
+
+            def track(*args, **kwargs):
+                child = original(*args, **kwargs)
+                children.append(child)
+                return child
+
+            with patch.object(agy.subprocess, "Popen", side_effect=track):
+                started = monotonic()
+                with self.assertRaises(HTTPException) as failure:
+                    agy.agy_command(["-c", code], timeout=4, folder=folder)
+                self.assertEqual(failure.exception.status_code, 502)
+                self.assertLess(monotonic() - started, 4)
+                self.assertIsNotNone(children[0].poll())
+
+    def test_agy_process_times_out_even_when_stdin_is_unread(self):
+        agy = app.google_providers
+        started = monotonic()
+        with tempfile.TemporaryDirectory() as folder, patch.object(agy.shutil, "which", return_value=sys.executable):
+            with self.assertRaises(HTTPException) as failure:
+                agy.agy_command(["-c", "import time; time.sleep(15)"], timeout=0.3, folder=folder,
+                                stdin="a" * 1_048_576)
+        self.assertEqual(failure.exception.status_code, 504)
+        self.assertLess(monotonic() - started, 4)
+
+    def test_generate_reports_timed_out_stage(self):
+        road = app.commit(Roadmap.model_validate(ROAD))
+        rid, tid = road["id"], road["chapters"][0]["topics"][0]["id"]
+        lesson, _ = planned_sample()
+        token = app.language.set("en")
+        try:
+            with patch.object(app, "ai_settings", return_value={"provider": "agy"}):
+                with patch.object(app.ai, "structured", side_effect=HTTPException(504, "agy timed out")):
+                    with self.assertRaises(HTTPException) as failure:
+                        app.generate(rid, tid)
+                    self.assertEqual(failure.exception.status_code, 504)
+                    self.assertIn("writing the lesson", failure.exception.detail)
+                    self.assertIsNone(app.get(f"lesson:{rid}:{tid}"))
+                with patch.object(app.ai, "structured", side_effect=[lesson, HTTPException(504, "agy timed out")]):
+                    doc = app.generate(rid, tid)
+                self.assertEqual(doc["illustration_status"][0], {
+                    "section": 0, "state": "failed", "provider": "agy", "error": 504, "attempts": 1,
+                })
+                self.assertEqual(app.read(rid, tid)["doc"], doc)
+        finally:
+            app.language.reset(token)
+
+    def test_illustration_retry_preserves_progress_and_existing_scene_index(self):
+        road = app.commit(Roadmap.model_validate(ROAD))
+        rid, tid = road["id"], road["chapters"][0]["topics"][0]["id"]
+        draft, visuals = planned_sample()
+        first = visuals["illustrations"][0]
+        second = {**first, "section": 1, "instruction": "Second saved scene"}
+        draft["illustration_plan"].append({"section": 1, "brief": second["instruction"]})
+        settings = {"provider": "codex", "visual_provider": "agy", "agy_visual_model": "agy-first"}
+        with patch.object(app, "ai_settings", return_value=settings), patch.object(
+            app.ai, "structured", side_effect=[draft, HTTPException(504), {"illustrations": [second]}]
+        ) as generate:
+            doc = app.generate(rid, tid)
+        self.assertEqual([anchor["state"] for anchor in doc["illustration_status"]], ["failed", "ready"])
+        self.assertEqual(doc["illustration_status"][1]["index"], 0)
+        self.assertNotIn("quiz", generate.call_args.args[2])
+        self.assertEqual(generate.call_args.args[2]["section"], draft["sections"][1])
+        mark = app.note(rid, tid, app.Anchor(version=doc["version"], block="i0", start=0,
+                                           end=6, quote="Second"))
+        app.quiz(rid, tid, app.Attempt(question=0, answer="1962 cm"))
+        settings["agy_visual_model"] = "agy-second"
+        body = app.RetryIllustration(version=doc["version"], attempts=1)
+        with patch.object(app, "ai_settings", return_value=settings), patch.object(
+            app.ai, "structured", return_value={"illustrations": [first]}
+        ) as retry, ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: app.retry_illustration(rid, tid, 0, body), range(2)))
+        retry.assert_called_once()
+        self.assertEqual(retry.call_args.kwargs["settings"]["agy_visual_model"], "agy-second")
+        self.assertEqual(results[0], results[1])
+        updated = results[0]
+        self.assertEqual(updated["version"], doc["version"])
+        self.assertEqual(updated["illustrations"], [second, first])
+        self.assertEqual([state["index"] for state in updated["illustration_status"]], [1, 0])
+        bundle = app.read(rid, tid)
+        self.assertEqual(bundle["notes"], [mark])
+        self.assertTrue(bundle["progress"]["0"][-1]["correct"])
+        self.assertEqual(app.blocks(updated)["i0"], second["instruction"])
+
+    def test_illustration_failed_repair_preserves_scene(self):
+        original = app.visual("physics", "free-fall", 0)[1]
+        with patch.object(app.ai, "structured", side_effect=HTTPException(504)):
+            with self.assertRaises(HTTPException) as failure:
+                app.repair("physics", "free-fall", 0, app.Repair(error="fixture", manual=True))
+        self.assertEqual(failure.exception.status_code, 504)
+        self.assertEqual(app.visual("physics", "free-fall", 0)[1], original)
 
     def test_google_tutor_uses_local_tools_and_rejects_web_search_explicitly(self):
         for provider in ("gemini", "agy"):
@@ -123,6 +254,34 @@ class Study(unittest.TestCase):
              patch.object(app.google_providers, "agy_command", return_value=agy):
             self.assertEqual(app.google_models("gemini"), [{"id": "gemini-flash", "name": "Gemini Flash"}])
             self.assertEqual(app.google_models("agy"), [{"id": "gemini-flash-low", "name": "Gemini Flash (Low)"}])
+
+    def test_cli_illustration_catalog_protocol_and_errors(self):
+        replies = [
+            {"id": 0, "result": {}},
+            {"id": 1, "result": {"data": [
+                {"model": "fixture-codex", "displayName": "Fixture Codex", "hidden": False},
+                {"model": "hidden-fixture", "displayName": "Hidden", "hidden": True},
+            ], "nextCursor": "page-two"}},
+            {"id": 2, "result": {"data": [
+                {"model": "fixture-codex-second", "displayName": "Second Codex"},
+            ], "nextCursor": None}},
+        ]
+        child = SimpleNamespace(stdin=StringIO(), stdout=StringIO("\n".join(map(json.dumps, replies))))
+        self.assertEqual(app.providers.codex_catalog_rpc(child), [
+            {"id": "fixture-codex", "name": "Fixture Codex"},
+            {"id": "fixture-codex-second", "name": "Second Codex"},
+        ])
+        requests = list(map(json.loads, child.stdin.getvalue().splitlines()))
+        self.assertEqual([request["method"] for request in requests],
+                         ["initialize", "initialized", "model/list", "model/list"])
+        self.assertEqual(requests[-1]["params"]["cursor"], "page-two")
+        for code, output in ((0, ""), (0, "gemini-flash    Flash\nbroken"), (1, "gemini-flash    Flash")):
+            with self.subTest(output=output), patch.object(
+                app.google_providers, "agy_command", return_value=CompletedProcess([], code, output, "")
+            ):
+                with self.assertRaises(HTTPException) as failure:
+                    app.model_catalog("agy")
+                self.assertEqual(failure.exception.status_code, 502)
 
     def test_lesson_retries_invalid_codex_output(self):
         road = app.commit(Roadmap.model_validate(ROAD))
@@ -167,10 +326,10 @@ class Study(unittest.TestCase):
         with patch.object(app, "ai_settings", return_value=settings), patch.object(app.ai, "client") as client:
             parse = client.return_value.responses.parse
             parse.side_effect = [SimpleNamespace(output_parsed=value) for value in parsed]
-            with self.assertRaises(HTTPException) as mismatch:
-                app.generate(rid, tid)
-            self.assertEqual(mismatch.exception.status_code, 502)
-            self.assertIsNone(app.read(rid, tid)["doc"])
+            doc = app.generate(rid, tid)
+            self.assertEqual(doc["illustration_status"][0]["error"], 502)
+            self.assertEqual(doc["illustrations"], [])
+            self.assertEqual(app.read(rid, tid)["doc"], doc)
             app.ai.structured(Illustration, "Repair", {}, settings={"provider": "openai"})
         self.assertEqual([call.kwargs["model"] for call in parse.call_args_list],
                          [app.ai.MODEL, "vision-code-model", app.ai.MODEL])

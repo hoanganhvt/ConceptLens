@@ -1,0 +1,5 @@
+Installed CLIs: codex-cli 0.172.0, agy 1.5.18.
+Disposable Codex SQLite state: False.
+Protocol-only Codex catalog probe with an empty CLI home.
+codex catalog: 11 models in 0.38s. Selected gpt-6.2-sol.
+Exit code 0

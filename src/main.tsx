@@ -5,7 +5,7 @@ import {Lab} from './Lab';
 import {AiLoading} from './AiLoading';
 import {MemoriesUsed,MemorySettings} from './MemorySettings';
 import {formulas,renderMath,sourceText} from './math';
-import {api,type Road,type Bundle,type Topic,type Anchor,type Msg,type Progress,type MemoryRef} from './types';
+import {api,type Road,type Bundle,type Topic,type Anchor,type Msg,type Progress,type MemoryRef,type Lesson,type VisualStatus} from './types';
 import './style.css';
 
 function Dialog({title,children,close}:{title:string,children:React.ReactNode,close:()=>void}){
@@ -118,16 +118,38 @@ function TutorPanel({path,open,close,branch,setBranch,note,memoryEpoch,openMemor
   </section>
 }
 
+function visualStatus(state:Exclude<VisualStatus,{state:'ready'}>){
+  if(state.state==='pending')return tr("Minh họa đang chờ tạo.", "Illustration is pending.");
+  const provider=providerNames[state.provider as AiProvider]||state.provider;
+  const reason={
+    429:tr("Đã chạm giới hạn sử dụng.", "Usage limit reached."),
+    503:tr("Provider chưa sẵn sàng. Kiểm tra Cài đặt.", "Provider is unavailable. Check Settings."),
+    504:tr("Đã hết thời gian chờ.", "The request timed out."),
+  }[state.error]||tr("Kiểm tra model trong Cài đặt rồi thử lại.", "Check the model in Settings and try again.");
+  return tr(`Không thể tạo minh họa với ${provider}. ${reason}`, `Could not generate the illustration with ${provider}. ${reason}`);
+}
+
 function Reader({road,topic,memoryEpoch,openMemory}:{road:Road,topic:Topic}&MemoryNavigation){
   const path=road.id+'/'+topic.id;
   const [bundle,setBundle]=useState<Bundle|null>(null),[err,setErr]=useState(''),[busy,setBusy]=useState(false);
   const [tutorOpen,setTutorOpen]=useState(()=>window.location.hash==='#tutor'),[branch,setBranch]=useState(newThread);
   const tutorButton=useRef<HTMLButtonElement>(null);
   const [attempt,setAttempt]=useState<number|null>(null);
+  const [sceneRetry,setSceneRetry]=useState<number|null>(null);
   const [remembered,setRemembered]=useState<string|null>(null);
   const quizRequests=useRef<Record<number,{answer:string,id:string}>>({});
   const snapshots=useRef<Record<number,Record<string,number>>>({}), live=useRef(true),restored=useRef(false);
   const doc=bundle?.doc;
+  async function retryScene(slot:number, attempts:number){
+    if(!doc||sceneRetry!==null)return;
+    setSceneRetry(slot);
+    setErr('');
+    try{
+      const updated=await api<Lesson>('lesson/'+path+'/illustrations/'+slot,{version:doc.version,attempts});
+      if(live.current)setBundle(b=>b?.doc?.version===updated.version?{...b,doc:updated}:b);
+    }catch(e){if(live.current)setErr(String(e))}
+    finally{if(live.current)setSceneRetry(null)}
+  }
   function openHighlight(id:string){setBranch(id);setTutorOpen(true)}
   function closeTutor(){setTutorOpen(false);tutorButton.current?.focus({preventScroll:true})}
   useEffect(()=>{
@@ -198,7 +220,21 @@ function Reader({road,topic,memoryEpoch,openMemory}:{road:Road,topic:Topic}&Memo
   <AiLoading active={busy} variant="wave">{tr("Gia sư đang soạn bài…", "Preparing your lesson…")}</AiLoading></>}
   {doc&&bundle&&<><div className="intro">{annotated('intro',doc.intro)}</div><nav className="tabs"><a href="#lesson">{tr("Bài giảng", "Lesson")}</a><a href="#quiz">Quiz</a><button type="button" ref={tutorButton} aria-controls="tutor" aria-expanded={tutorOpen} onClick={()=>tutorOpen?closeTutor():setTutorOpen(true)}>{tr("Hỏi gia sư", "Ask the tutor")}</button></nav>
   <div id="lesson">{doc.sections.map((s,i)=><section key={i}><h2>{renderMath(s.title)}</h2>{annotated('s'+i,s.text)}
-    {doc.illustrations.map((v,j)=>v.section===i?<Lab key={j} item={v} index={j} path={path} annotate={annotated} onSnapshot={state=>{snapshots.current[j]=state}}/>:null)}</section>)}</div>
+    {doc.illustration_status?doc.illustration_status.map((state,slot)=>{
+      if(state.section!==i)return null;
+      if(state.state==='ready'){
+        const index=state.index;
+        return <Lab key={slot} item={doc.illustrations[index]} index={index} path={path} annotate={annotated}
+          onSnapshot={values=>{snapshots.current[index]=values}}/>;
+      }
+      return <div className="lab" key={slot}>
+        <p role="status">{visualStatus(state)}</p>
+        <button type="button" disabled={sceneRetry!==null} onClick={()=>void retryScene(slot,state.attempts)}>
+          {tr("Thử tạo lại minh họa", "Retry illustration")}
+        </button>
+        <AiLoading active={sceneRetry===slot} variant="orbit">{tr("Đang tạo minh họa.", "Generating illustration.")}</AiLoading>
+      </div>;
+    }):doc.illustrations.map((v,j)=>v.section===i?<Lab key={j} item={v} index={j} path={path} annotate={annotated} onSnapshot={state=>{snapshots.current[j]=state}}/>:null)}</section>)}</div>
   <section id="quiz"><h2>{tr("Kiểm tra nhanh", "Quick quiz")}</h2>{doc.quiz.map((q,i)=>{const prev=bundle.progress[i]?.at(-1);return <form key={i} className="question" onSubmit={e=>void submitQuiz(e,i)}>
     <h3>{renderMath(q.prompt)}</h3>{q.kind==='choice'?q.choices.map(c=><label className="inline" key={c}><input type="radio" name="answer" required value={c} defaultChecked={prev?.answer===c}/><span>{renderMath(c)}</span></label>):<label>{tr("Đáp số và đơn vị", "Answer and unit")}<input required name="answer" defaultValue={prev?.answer} placeholder={tr("Ví dụ: 1,5 m", "For example, 1.5 m")}/></label>}
     <button disabled={attempt!==null}>{tr("Kiểm tra đáp án", "Check answer")}</button>{prev&&<p role="status" className={prev.correct?'success':'feedback'}><b>{prev.correct?tr("Chính xác.", "Correct."):tr("Chưa đúng.", "Try again.")}</b> {renderMath(prev.explanation)}
@@ -213,6 +249,7 @@ function Reader({road,topic,memoryEpoch,openMemory}:{road:Road,topic:Topic}&Memo
 
 type AiProvider='openai'|'codex'|'gemini'|'agy';
 type GoogleProvider='gemini'|'agy';
+type CliProvider='codex'|'agy';
 type ModelOption={id:string,name:string};
 const providerNames:Record<AiProvider,string>={openai:'OpenAI API',codex:'Codex CLI',gemini:'Google Gemini API',agy:'Google Antigravity CLI (agy)'};
 const modelFields=['codex_model','codex_visual_model','openai_visual_model','gemini_model','gemini_visual_model','agy_model','agy_visual_model'] as const;
@@ -222,14 +259,55 @@ type AISettings=Record<(typeof modelFields)[number],string|null>&{
   codex:'ready'|'logged_out'|'missing'|'unknown',codex_models:ModelOption[]
 };
 
+type VisualCatalog={provider:CliProvider,models:ModelOption[],error:string};
+
+function CliIllustrationPicker({provider,model,onSelect,catalog,setCatalog}:{provider:CliProvider,model:string,
+  onSelect:(model:string)=>void,catalog:VisualCatalog|null,setCatalog:(catalog:VisualCatalog|null)=>void}){
+  const [query,setQuery]=useState(''),[refresh,setRefresh]=useState(0);
+  useEffect(()=>{
+    let current=true;
+    setCatalog(null);
+    api<ModelOption[]>('settings/models/'+provider)
+      .then(models=>{if(current)setCatalog({provider,models,error:models.length?'':tr("CLI không trả về model nào.", "The CLI returned no models.")})})
+      .catch(error=>{if(current)setCatalog({provider,models:[],error:error.message})});
+    return()=>{current=false};
+  },[provider,refresh]);
+  const search=query.trim().toLowerCase();
+  const options=catalog?.models.filter(option=>option.id.toLowerCase().includes(search)||option.name.toLowerCase().includes(search))||[];
+  const chosen=options.some(option=>option.id===model)?model:'';
+  return <div>
+    <label>{tr("Tìm theo tên hoặc ID", "Search by name or ID")}<input type="search" value={query}
+      onChange={e=>setQuery(e.target.value)}/></label>
+    <label>{tr("Model minh họa", "Illustration model")}<select value={chosen} disabled={!options.length}
+      onChange={e=>onSelect(e.target.value)}>
+      <option disabled value="">{tr("Chọn model", "Choose a model")}</option>
+      {options.map(option=><option key={option.id} value={option.id}>{option.name} ({option.id})</option>)}
+    </select></label>
+    <button type="button" disabled={!catalog} onClick={()=>{setCatalog(null);setRefresh(n=>n+1)}}>
+      {tr("Làm mới model minh họa", "Refresh illustration models")}
+    </button>
+    {!catalog&&<p role="status">{tr("Đang tải model minh họa.", "Loading illustration models.")}</p>}
+    {catalog?.error&&<p role="status">{catalog.error}</p>}
+    {!!catalog?.models.length&&!options.length&&<p role="status">{tr("Không có model khớp.", "No matching models.")}</p>}
+    {!!catalog&&!!model&&!catalog.models.some(option=>option.id===model)&&<p role="status">
+      {tr(`Model đã lưu (${model}) không có trong danh sách hiện tại. Làm mới hoặc chọn model khác.`,
+        `Saved model (${model}) is unavailable in the current catalog. Refresh or choose another model.`)}
+    </p>}
+  </div>;
+}
+
 function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMemoryPolicyChange:()=>void,focusMemory?:MemoryRef}){
   const [settings,setSettings]=useState<AISettings|null>(null),[key,setKey]=useState(''),[remove,setRemove]=useState(false);
   const [googleKey,setGoogleKey]=useState(''),[removeGoogle,setRemoveGoogle]=useState(false);
   const [catalog,setCatalog]=useState<Partial<Record<GoogleProvider,{models?:ModelOption[],error?:string}>>>({});
+  const [visualCatalog,setVisualCatalog]=useState<VisualCatalog|null>(null);
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
-  useEffect(()=>{let active=true;api<AISettings>('settings').then(s=>{if(active)setSettings(s)}).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[]);
+  const initial=useRef<AISettings|null>(null);
+  useEffect(()=>{let active=true;api<AISettings>('settings').then(s=>{if(active){initial.current=s;setSettings(s)}}).catch(e=>{if(active)setError(String(e))});return()=>{active=false}},[]);
   const status={ready:tr("Codex CLI đã đăng nhập.", "Codex CLI is signed in."),logged_out:tr("Chạy codex login trong terminal để đăng nhập.", "Run codex login in your terminal to sign in."),missing:tr("Chưa tìm thấy Codex CLI trong PATH của máy chủ.", "Codex CLI was not found on the server PATH."),unknown:tr("Chưa xác định được trạng thái. Kiểm tra bằng codex login status.", "Sign-in status is unknown. Run codex login status to check.")};
   const visualProvider=settings?.visual_provider||settings?.provider;
+  const cliVisual=visualProvider==='codex'||visualProvider==='agy'?visualProvider:null;
+  const cliField=cliVisual?`${cliVisual}_visual_model` as const:null;
   const sources=[settings?.provider,visualProvider];
   const providerOptions=Object.entries(providerNames).map(([id,name])=><option key={id} value={id}>{name}</option>);
   async function loadModels(provider:GoogleProvider){
@@ -242,6 +320,14 @@ function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMem
   return <Dialog title={tr("Cài đặt", "Settings")} close={close}>{settings?<form onSubmit={async e=>{
     e.preventDefault();setBusy(true);setError('');
     const models=Object.fromEntries(modelFields.map(field=>[field,settings[field]?.trim()||null]));
+    const modelChanged=cliField&&models[cliField]!== (initial.current?.[cliField]||null);
+    const explicitCliChanged=cliField&&settings.visual_provider&&settings.visual_provider!==initial.current?.visual_provider;
+    if((modelChanged||explicitCliChanged)&&cliField&&
+      !(visualCatalog?.provider===cliVisual&&visualCatalog?.models.some(option=>option.id===models[cliField]))){
+      setError(tr("Chọn model minh họa từ danh sách của CLI.", "Choose an illustration model from the CLI catalog."));
+      setBusy(false);
+      return;
+    }
     try{await api('settings',{provider:settings.provider,visual_provider:settings.visual_provider,...models,
       ...(sources.includes('openai')&&key.trim()?{api_key:key.trim()}:{}),remove_key:sources.includes('openai')&&remove,
       ...(sources.includes('gemini')&&googleKey.trim()?{google_api_key:googleKey.trim()}:{}),
@@ -268,7 +354,7 @@ function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMem
     {sources.includes('agy')&&<p>{settings.agy_available?
       tr("Đăng nhập Google bằng lệnh agy trong terminal.", "Sign in to Google by running agy in a terminal."):
       tr("Chưa tìm thấy lệnh agy trên máy chủ.", "The agy command was not found on the server.")}</p>}
-    {(['gemini','agy'] as const).filter(provider=>sources.includes(provider)).map(provider=>{
+    {(['gemini','agy'] as const).filter(provider=>settings.provider===provider||provider==='gemini'&&visualProvider===provider).map(provider=>{
       const entry=catalog[provider],loading=!!entry&&!entry.models&&!entry.error;
       return <div key={provider}><button type="button" disabled={loading||(provider==='agy'?!settings.agy_available:!settings.google_saved_key&&!settings.google_environment_key)}
         onClick={()=>void loadModels(provider)}>{loading?tr("Đang tải model…", "Loading models…"):
@@ -277,7 +363,7 @@ function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMem
         <datalist id={provider+'-models'}>{entry?.models?.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</datalist></div>
     })}
     {sources.map((provider,index)=>{
-      if(!provider||(provider==='openai'&&index===0))return null;
+      if(!provider||(provider==='openai'&&index===0)||(index===1&&cliField))return null;
       const visual=index===1,field=(provider+(visual?'_visual_model':'_model')) as (typeof modelFields)[number];
       const model=settings[field]||'';
       const label=visual?tr("Model minh họa", "Illustration model"):tr(
@@ -294,6 +380,9 @@ function Settings({close,onMemoryPolicyChange,focusMemory}:{close:()=>void,onMem
         <input value={model} maxLength={128} placeholder={fallback} list={provider==='openai'?undefined:provider+'-models'}
           onChange={e=>setSettings({...settings,[field]:e.target.value})}/>}</label>;
     })}
+    {cliVisual&&cliField&&<CliIllustrationPicker key={cliVisual} provider={cliVisual}
+      model={settings[cliField]||''} onSelect={model=>setSettings({...settings,[cliField]:model})}
+      catalog={visualCatalog?.provider===cliVisual?visualCatalog:null} setCatalog={setVisualCatalog}/>}
     <button className="primary" disabled={busy}>{busy?tr("Đang lưu…", "Saving…"):tr("Lưu cài đặt", "Save settings")}</button>
   </form>:!error&&<p>{tr("Đang đọc cài đặt…", "Loading settings…")}</p>}{error&&<p role="alert">{error}</p>}
   <MemorySettings onMemoryPolicyChange={onMemoryPolicyChange} focusMemory={focusMemory}/></Dialog>

@@ -2,7 +2,10 @@ import {tr, language} from './language';
 export type Topic={id:string,title:string,goal:string};
 export type Road={id:string,title:string,goal:string,chapters:{title:string,topics:Topic[]}[]};
 export type Visual={section:number,title:string,instruction:string,explanation:string,mode:'motion'|'interactive',html:string,css:string,js:string};
-export type Lesson={version:string,intro:string,sections:{title:string,text:string}[],illustrations:Visual[],quiz:{kind:'number'|'choice',prompt:string,choices:string[]}[]};
+export type VisualStatus={section:number,attempts:number} & (
+  {state:'pending'} | {state:'failed',provider:string,error:number} | {state:'ready',provider:string,index:number}
+);
+export type Lesson={version:string,intro:string,sections:{title:string,text:string}[],illustrations:Visual[],illustration_status?:VisualStatus[],quiz:{kind:'number'|'choice',prompt:string,choices:string[]}[]};
 export type Anchor={id:string,version:string,block:string,start:number,end:number,quote:string,snapshot:Record<string,number>|null};
 export type MemoryRef={id:string,revision:number};
 export type Msg={role:string,text:string,sources?:{title:string,url:string,start:number,end:number}[],traces?:unknown[],memory_refs?:MemoryRef[]};

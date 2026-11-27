@@ -7,6 +7,7 @@ import sqlite3
 from contextlib import asynccontextmanager, contextmanager, nullcontext
 from pathlib import Path
 from threading import Lock
+from time import monotonic
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -24,7 +25,7 @@ from .embedding_process import EncoderProcess
 from .prompt_files import prompt
 from .demo import ROAD, SAMPLE, ROAD_EN, SAMPLE_EN
 from .language import language, tr
-from .models import Roadmap, Lesson, LessonDraft, Illustration, IllustrationBatch, Motion
+from .models import Roadmap, LessonDraft, Illustration, IllustrationBatch, Motion
 from .physics import assess, motion
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -144,9 +145,15 @@ def settings():
     return providers.public_settings(ai_settings())
 
 
-@app.get("/api/settings/models/{provider}")
 def google_models(provider: Literal["gemini", "agy"]):
     return google_providers.model_catalog(provider, ai_settings())
+
+
+@app.get("/api/settings/models/{provider}")
+def model_catalog(provider: Literal["codex", "gemini", "agy"]):
+    if provider == "codex":
+        return providers.codex_catalog()
+    return google_models(provider)
 
 
 settings_lock = Lock()
@@ -244,8 +251,45 @@ def read(rid:str,tid:str):
         progress = get_record(conn, "progress:"+key, {})
         if doc:
             learner_memory.mark_eligible(conn, rid, doc, progress)
-        return dict(doc=doc, progress=progress, notes=get_record(conn, "notes:"+key, []),
+        return dict(doc=public_lesson(doc) if doc else None, progress=progress, notes=get_record(conn, "notes:"+key, []),
                     main=get_record(conn, "thread:"+key+":main", []), scroll=get_record(conn, "scroll:"+key, 0))
+
+
+def public_lesson(doc):
+    return {key: value for key, value in doc.items() if key != "illustration_plan"}
+
+
+def lesson_stage(stage, provider, attempt, started, status):
+    logging.getLogger("uvicorn.error").getChild("lessons").info(
+        "stage=%s provider=%s status=%s retries=%d elapsed_ms=%d",
+        stage, provider, status, attempt - 1, round((monotonic() - started) * 1000),
+    )
+
+
+def generate_scene(key, doc, topic, slot, settings):
+    state = doc["illustration_status"][slot]
+    entry = doc["illustration_plan"][slot]
+    provider = settings.get("visual_provider") or settings.get("provider", "openai")
+    context = dict(topic=topic, intro=doc["intro"], section=doc["sections"][entry["section"]],
+                   illustration_plan=[entry])
+    started = monotonic()
+    attempt = state["attempts"] + 1
+    status = 200
+    try:
+        result = ai.structured(IllustrationBatch, prompt("illustrations/contract", "illustrations/generate"),
+                               context, settings=settings)["illustrations"]
+        if len(result) != 1 or result[0]["section"] != entry["section"]:
+            raise HTTPException(502)
+    except HTTPException as exc:
+        status = exc.status_code
+        state.update(state="failed", error=status, provider=provider)
+    else:
+        state.update(state="ready", index=len(doc["illustrations"]), provider=provider)
+        state.pop("error", None)
+        doc["illustrations"].append(result[0])
+    state["attempts"] = attempt
+    put(key, doc)
+    lesson_stage("illustration", provider, attempt, started, status)
 
 
 @app.post("/api/lesson/{rid}/{tid}")
@@ -255,18 +299,50 @@ def generate(rid:str,tid:str):
     with locks[hash(key)%len(locks)]:
         existing = get(key)
         if existing:
-            return existing
+            return public_lesson(existing)
         settings = ai_settings()
-        doc = ai.structured(LessonDraft, prompt("lessons/generate"), dict(road=road, topic=topic), settings=settings)
-        plan = doc.pop("illustration_plan")
-        scenes = ai.structured(IllustrationBatch, prompt("illustrations/contract", "illustrations/generate"),
-                               dict(topic=topic, intro=doc["intro"], sections=doc["sections"], illustration_plan=plan),
-                               settings=settings)["illustrations"]
-        if [scene["section"] for scene in scenes] != [scene["section"] for scene in plan]:
-            raise HTTPException(502, tr("Minh họa tạo ra không khớp với kế hoạch bài giảng. Hãy thử lại.",
-                                        "The generated illustrations did not match the lesson plan. Please try again."))
-        doc["illustrations"] = scenes
-        return put(key,dict(doc,version=unique()))
+        provider = settings.get("provider", "openai")
+        attempt = get("lesson-attempts:"+key, 0) + 1
+        put("lesson-attempts:"+key, attempt)
+        started = monotonic()
+        try:
+            doc = ai.structured(LessonDraft, prompt("lessons/generate"), dict(road=road, topic=topic), settings=settings)
+        except HTTPException as exc:
+            lesson_stage("prose", provider, attempt, started, exc.status_code)
+            detail = tr(f"Không thể viết nội dung bài giảng ({provider}). {exc.detail}",
+                        f"Failed while writing the lesson ({provider}). {exc.detail}")
+            raise HTTPException(exc.status_code, detail) from exc
+        doc = {**doc, "version": unique(), "illustrations": [], "illustration_status": [
+            {"section": scene["section"], "state": "pending", "attempts": 0}
+            for scene in doc["illustration_plan"]
+        ]}
+        put(key, doc)
+        lesson_stage("prose", provider, attempt, started, 200)
+        for slot in range(len(doc["illustration_status"])):
+            generate_scene(key, doc, topic, slot, settings)
+        return public_lesson(doc)
+
+
+class RetryIllustration(BaseModel):
+    version: str
+    attempts: int = Field(ge=0)
+
+
+@app.post("/api/lesson/{rid}/{tid}/illustrations/{slot}")
+def retry_illustration(rid: str, tid: str, slot: int, body: RetryIllustration):
+    _, topic = topic_for(rid, tid)
+    key = f"lesson:{rid}:{tid}"
+    with locks[hash(key)%len(locks)]:
+        doc = lesson_for(rid, tid)
+        if doc["version"] != body.version:
+            raise HTTPException(409, tr("Bài giảng đã thay đổi. Hãy tải lại.", "The lesson changed. Reload it first."))
+        states = doc.get("illustration_status", [])
+        if not 0 <= slot < len(states):
+            raise HTTPException(404, tr("Không tìm thấy minh họa.", "Illustration not found."))
+        state = states[slot]
+        if state["state"] != "ready" and state["attempts"] == body.attempts:
+            generate_scene(key, doc, topic, slot, ai_settings())
+        return public_lesson(doc)
 
 
 class Attempt(BaseModel):
@@ -598,10 +674,24 @@ def repair(rid:str,tid:str,index:int,body:Repair):
             raise HTTPException(409,tr("Đã thử sửa minh họa. Bạn có thể tạo lại.", "An automatic repair was already attempted. You can regenerate the illustration."))
         if not body.manual:
             put(marker,True)
-        replacement = ai.structured(Illustration,prompt("illustrations/contract", "illustrations/repair"),dict(item=item,error=body.error),settings=ai_settings())
+        settings = ai_settings()
+        provider = settings.get("visual_provider") or settings.get("provider", "openai")
+        attempt_key = f"repair-attempts:{rid}:{tid}:{index}"
+        attempt = get(attempt_key, 0) + 1
+        put(attempt_key, attempt)
+        started = monotonic()
+        try:
+            replacement = ai.structured(Illustration, prompt("illustrations/contract", "illustrations/repair"),
+                                        dict(item=item, error=body.error), settings=settings)
+        except HTTPException as exc:
+            lesson_stage("repair", provider, attempt, started, exc.status_code)
+            detail = tr(f"Không thể sửa minh họa ({provider}). {exc.detail}",
+                        f"Failed while repairing the illustration ({provider}). {exc.detail}")
+            raise HTTPException(exc.status_code, detail) from exc
         for field in ("html","css","js"):
             item[field] = replacement[field]
         put(key,doc)
+        lesson_stage("repair", provider, attempt, started, 200)
         return item
 
 

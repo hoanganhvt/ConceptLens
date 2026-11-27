@@ -1,0 +1,2 @@
+both-ready (20 measured samples), median milliseconds: {'generation_ms': 34.906, 'repair_ms': 14.6}
+timeout-then-retry (20 measured samples), median milliseconds: {'generation_ms': 38.594, 'retry_ms': 7.653, 'repair_ms': 13.527}

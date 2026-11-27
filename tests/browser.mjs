@@ -30,12 +30,27 @@ try{
   browser=await chromium.launch({executablePath,headless:true});
   const page=await browser.newPage();
   page.on('pageerror',err=>console.error('Browser error:',err.message));
+  const modelId='codex-visual-fixture';
+  let agyCatalog=[{id:'gemini-agy-fixture',name:'Fixture Antigravity'},{id:'agy-second-fixture',name:'Other model'}];
+  let agyLoads=0;
+  await page.route('**/api/settings/models/codex',route=>route.fulfill({
+    json:[{id:modelId,name:'Codex Visual Fixture'}]
+  }));
+  await page.route('**/api/settings/models/agy',route=>{
+    agyLoads++;
+    return route.fulfill({json:agyCatalog});
+  });
+  await page.route('**/api/settings',async route=>{
+    if(route.request().method()!=='GET')return route.continue();
+    const response=await route.fetch();
+    const settings=await response.json();
+    await route.fulfill({response,json:{...settings,codex_models:[{id:modelId,name:'Codex Visual Fixture'}]}});
+  });
   await page.goto(base);
   const settingsButton=page.getByRole('button',{name:'Cài đặt',exact:true});
   await settingsButton.click();
   await page.getByLabel('Nguồn AI').selectOption('codex');
   const modelSelect=page.getByLabel('Model Codex');
-  const modelId=await modelSelect.locator('option').evaluateAll(options=>options[1]?.value||'');
   await modelSelect.selectOption(modelId);
   await page.getByLabel('Model minh họa').selectOption(modelId);
   await page.getByRole('button',{name:'Lưu cài đặt'}).click();
@@ -44,6 +59,7 @@ try{
   await settingsButton.click();
   assert.equal(await page.getByLabel('Nguồn AI').inputValue(),'codex');
   assert.equal(await page.getByLabel('Model Codex').inputValue(),modelId);
+  await page.getByLabel('Model minh họa').locator(`option[value="${modelId}"]`).waitFor({state:'attached'});
   assert.equal(await page.getByLabel('Model minh họa').inputValue(),modelId);
   await page.getByLabel('Nguồn AI').selectOption('openai');
   await page.getByLabel('Model minh họa').fill('fixture-visual-model');
@@ -64,7 +80,13 @@ try{
   await page.getByLabel('Nguồn AI').selectOption('gemini');
   await page.getByLabel('Nguồn minh họa').selectOption('agy');
   await page.getByLabel('Model Gemini').fill('gemini-lesson-fixture');
-  await page.getByLabel('Model minh họa').fill('gemini-agy-fixture');
+  await page.getByLabel('Tìm theo tên hoặc ID').fill('Fixture Antigravity');
+  const visualSelect=page.getByLabel('Model minh họa');
+  await visualSelect.locator('option[value="gemini-agy-fixture"]').waitFor({state:'attached'});
+  assert.deepEqual(await visualSelect.locator('option:not([disabled])').evaluateAll(options=>options.map(o=>o.value)),
+                   ['gemini-agy-fixture']);
+  await page.getByLabel('Tìm theo tên hoặc ID').fill('gemini-agy-fixture');
+  await visualSelect.selectOption('gemini-agy-fixture');
   if(process.platform==='win32')await page.getByLabel('Gemini API key').fill('fixture-google-secret');
   await page.getByRole('button',{name:'Lưu cài đặt'}).click();
   await page.getByRole('dialog').waitFor({state:'hidden'});
@@ -76,7 +98,14 @@ try{
   assert.equal(await page.getByLabel('Nguồn AI').inputValue(),'gemini');
   assert.equal(await page.getByLabel('Nguồn minh họa').inputValue(),'agy');
   assert.equal(await page.getByLabel('Model Gemini').inputValue(),'gemini-lesson-fixture');
+  await visualSelect.locator('option[value="gemini-agy-fixture"]').waitFor({state:'attached'});
   assert.equal(await page.getByLabel('Model minh họa').inputValue(),'gemini-agy-fixture');
+  agyCatalog=[{id:'agy-second-fixture',name:'Other model'}];
+  await page.getByRole('button',{name:'Làm mới model minh họa'}).click();
+  await page.getByText(/gemini-agy-fixture.*không có trong danh sách/).waitFor();
+  assert.deepEqual(await visualSelect.locator('option:not([disabled])').evaluateAll(options=>options.map(o=>o.value)),
+                   ['agy-second-fixture']);
+  assert.ok(agyLoads>=3);
   if(process.platform==='win32')await page.getByLabel('Xóa khóa Gemini đã lưu').check();
   await page.getByRole('button',{name:'Lưu cài đặt'}).click();
   await page.getByRole('dialog').waitFor({state:'hidden'});

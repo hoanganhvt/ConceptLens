@@ -2,7 +2,7 @@ from contextlib import nullcontext
 from .language import tr
 import json
 import os
-from openai import OpenAI, APIError
+from openai import OpenAI, APIError, APITimeoutError, RateLimitError
 from fastapi import HTTPException
 from typing import Literal
 from pydantic import BaseModel, ValidationError
@@ -62,6 +62,10 @@ def structured(schema, instructions, context, *, settings):
         if parsed is None:
             raise ValueError()
         return parsed.model_dump()
+    except APITimeoutError as exc:
+        raise HTTPException(504, tr("OpenAI trả lời quá lâu.", "OpenAI timed out.")) from exc
+    except RateLimitError as exc:
+        raise HTTPException(429, tr("OpenAI đã chạm giới hạn sử dụng.", "OpenAI reached its usage limit.")) from exc
     except (ValueError, ValidationError, APIError) as exc:
         raise HTTPException(502, tr("AI chưa trả về nội dung hợp lệ. Kiểm tra model, API key, hạn mức rồi thử lại.", "The AI returned invalid content. Check your model, API key, and quota, then try again.")) from exc
 

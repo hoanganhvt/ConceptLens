@@ -1,0 +1,20 @@
+
+> test:ui
+> node tests/browser.mjs
+
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+page.goto: net::ERR_NETWORK_ACCESS_DENIED at http://127.0.0.1:65110/
+Call log:
+  - navigating to "http://127.0.0.1:65110/", waiting until "load"
+
+    at C:\Users\ADMIN\Documents\ConceptLens\tests\browser.mjs:49:14 {
+  log: [
+    '  - navigating to "http://127.0.0.1:65110/", waiting until "load"'
+  ],
+  name: 'Error'
+}
+
+Node.js v24.11.1

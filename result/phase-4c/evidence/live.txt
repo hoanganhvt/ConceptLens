@@ -1,0 +1,6 @@
+Installed CLIs: codex-cli 0.172.0, agy 1.5.18.
+Disposable Codex SQLite state: False.
+codex catalog blocked: HTTP 502 after 0.09s. Codex CLI did not return a valid model catalog. Check its version and sign-in.
+agy catalog blocked: HTTP 502 after 0.31s. Could not list models. Open agy in a terminal to sign in to Google.
+V7 blocked before mixed-provider lesson generation.
+Exit code 2

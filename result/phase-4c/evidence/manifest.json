@@ -1,0 +1,39 @@
+{
+  "base_revision": "ad2f22741272f35e5dc15e5e3a677a32113c70e6",
+  "source_state": "Base revision plus the local working-tree files identified by SHA-256",
+  "runtime": {
+    "python": "Python 3.12.14",
+    "node": "v24.11.1",
+    "chromium": "158.0.8127.37",
+    "codex": "0.172.0",
+    "agy": "1.5.18"
+  },
+  "source_sha256": {
+    "backend/ai.py": "bbc8a03ce9162a093f57260c3f252b7f20ac8cc07945db131ff188ef6e90c0f2",
+    "backend/google_providers.py": "b986a4773341e63668f2c3990733299daefa5cf2161558de09eeda4e1b62618f",
+    "backend/main.py": "e5a300ed8904477728b059b4b9781fde2bd3bf13e7a2b239742d2db7565df2db",
+    "backend/providers.py": "23e7f1a67eac20dbef15d4e8bb713ca83462e1fba3269b77c239724cf2c87b1d",
+    "backend/models.py": "a4709e8c2bf33973c2637eec0b309a0a3d35a9348cb2dc8e9ca2e185aeb83ce6",
+    "src/main.tsx": "b008d968b294f63b97628bc58cd83b195d9fcb781ccb3a61bdcd38c8234fa072",
+    "src/types.ts": "683832486915bcb74436cb1eb4c95467f07f0d9c0a9bfee3cc72835ae0775475",
+    "src/Lab.tsx": "8e099a1755d00446c66901dd25d9ad5df4c75016711eae98a64ed5245556369e",
+    "src/frame.js": "c3fd9f9a1629b9e807e6bff12b6dad6128fdf5046d61ccd85539e543610ec72b",
+    "tests/browser.mjs": "88664823a710e243b7173f351f9b752fc52f9eeefaa2c4fec45c0fc7d4fd9240",
+    "tests/test_study.py": "4dac6d7df03c19787b1d23f48f418dd489a5f4cde4bcfb937b5af1f37e97acd8",
+    "tests/test_tutor_agent.py": "dc8c5ae938d96189ea68d2749526080b32cee7919a8b2b22d8d6c93cfc508c9d",
+    "package-lock.json": "b5581c04223eb63b9ce5cd178427e86a34189affef462ee4323c12736172b771",
+    "requirements.txt": "0899afa1da0fad25614179e5955cda382969c3a8421c0daf69c74f25185489b0"
+  },
+  "verification_sha256": {
+    "result/phase-4c/code/benchmark.py": "b75eeef51bae57f2edc4b8158b204e9d92dc385e60b10ba3c99967b70e42b206",
+    "result/phase-4c/code/live_smoke.py": "b4a62e00b7c94e40ce5f52c7f386073442a84a482f74c27f1482fb5fec076c95",
+    "result/phase-4c/code/offline_api.py": "b41de90bc743e4c73c6512f558f8cb8f88bc6d1525202650c1078b8b052bdc8f",
+    "result/phase-4c/code/offline_browser.mjs": "4941a96f6bd33c2177acd4bd9d19acc000e36cc4960f0ae5c737dcf24e426abd",
+    "result/phase-4c/code/run_unit_windows.py": "255183b094d0eb57729619ae5c49d97c8c9784f5486e85193b2c8987edba56ec",
+    "result/phase-4c/code/verification/tests/browser.mjs": "88664823a710e243b7173f351f9b752fc52f9eeefaa2c4fec45c0fc7d4fd9240",
+    "result/phase-4c/code/verification/tests/test_study.py": "4dac6d7df03c19787b1d23f48f418dd489a5f4cde4bcfb937b5af1f37e97acd8",
+    "result/phase-4c/code/verification/tests/test_tutor_agent.py": "dc8c5ae938d96189ea68d2749526080b32cee7919a8b2b22d8d6c93cfc508c9d",
+    "result/phase-4c/code/windows_test_support/sitecustomize.py": "e35cf7435532972f55b168d0a13ae0273f8acf83886c2b520ea49bab4ea57ab0"
+  },
+  "data": "Disposable SQLite study directories and synthetic lessons"
+}

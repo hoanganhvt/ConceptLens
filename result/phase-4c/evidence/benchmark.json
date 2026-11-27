@@ -1,0 +1,522 @@
+[
+  {
+    "scenario": "both-ready",
+    "sample": 1,
+    "generation_ms": 35.22,
+    "retry_ms": null,
+    "repair_ms": 15.887,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 2,
+    "generation_ms": 37.915,
+    "retry_ms": null,
+    "repair_ms": 15.849,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 3,
+    "generation_ms": 33.777,
+    "retry_ms": null,
+    "repair_ms": 13.985,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 4,
+    "generation_ms": 34.003,
+    "retry_ms": null,
+    "repair_ms": 14.666,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 5,
+    "generation_ms": 31.851,
+    "retry_ms": null,
+    "repair_ms": 14.534,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 6,
+    "generation_ms": 36.624,
+    "retry_ms": null,
+    "repair_ms": 16.11,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 7,
+    "generation_ms": 34.592,
+    "retry_ms": null,
+    "repair_ms": 16.776,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 8,
+    "generation_ms": 33.606,
+    "retry_ms": null,
+    "repair_ms": 16.287,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 9,
+    "generation_ms": 34.268,
+    "retry_ms": null,
+    "repair_ms": 14.528,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 10,
+    "generation_ms": 30.818,
+    "retry_ms": null,
+    "repair_ms": 12.074,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 11,
+    "generation_ms": 42.013,
+    "retry_ms": null,
+    "repair_ms": 14.077,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 12,
+    "generation_ms": 40.991,
+    "retry_ms": null,
+    "repair_ms": 30.667,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 13,
+    "generation_ms": 46.819,
+    "retry_ms": null,
+    "repair_ms": 19.427,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 14,
+    "generation_ms": 47.912,
+    "retry_ms": null,
+    "repair_ms": 16.384,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 15,
+    "generation_ms": 38.667,
+    "retry_ms": null,
+    "repair_ms": 15.82,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 16,
+    "generation_ms": 38.666,
+    "retry_ms": null,
+    "repair_ms": 10.857,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 17,
+    "generation_ms": 29.142,
+    "retry_ms": null,
+    "repair_ms": 11.198,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 18,
+    "generation_ms": 39.227,
+    "retry_ms": null,
+    "repair_ms": 11.722,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 19,
+    "generation_ms": 25.374,
+    "retry_ms": null,
+    "repair_ms": 11.811,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "both-ready",
+    "sample": 20,
+    "generation_ms": 29.238,
+    "retry_ms": null,
+    "repair_ms": 10.563,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 1,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 1,
+    "generation_ms": 38.898,
+    "retry_ms": 8.87,
+    "repair_ms": 14.823,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 2,
+    "generation_ms": 31.564,
+    "retry_ms": 7.781,
+    "repair_ms": 14.464,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 3,
+    "generation_ms": 35.796,
+    "retry_ms": 6.641,
+    "repair_ms": 11.798,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 4,
+    "generation_ms": 33.721,
+    "retry_ms": 6.073,
+    "repair_ms": 13.498,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 5,
+    "generation_ms": 40.649,
+    "retry_ms": 6.483,
+    "repair_ms": 13.085,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 6,
+    "generation_ms": 35.363,
+    "retry_ms": 9.792,
+    "repair_ms": 13.556,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 7,
+    "generation_ms": 33.753,
+    "retry_ms": 8.267,
+    "repair_ms": 11.455,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 8,
+    "generation_ms": 29.382,
+    "retry_ms": 6.419,
+    "repair_ms": 13.233,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 9,
+    "generation_ms": 39.027,
+    "retry_ms": 7.326,
+    "repair_ms": 11.472,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 10,
+    "generation_ms": 34.215,
+    "retry_ms": 6.397,
+    "repair_ms": 15.307,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 11,
+    "generation_ms": 36.931,
+    "retry_ms": 6.096,
+    "repair_ms": 11.326,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 12,
+    "generation_ms": 39.942,
+    "retry_ms": 7.526,
+    "repair_ms": 14.717,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 13,
+    "generation_ms": 39.667,
+    "retry_ms": 8.406,
+    "repair_ms": 11.747,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 14,
+    "generation_ms": 28.517,
+    "retry_ms": 7.151,
+    "repair_ms": 11.893,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 15,
+    "generation_ms": 51.536,
+    "retry_ms": 9.014,
+    "repair_ms": 14.906,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 16,
+    "generation_ms": 50.835,
+    "retry_ms": 7.182,
+    "repair_ms": 17.225,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 17,
+    "generation_ms": 43.196,
+    "retry_ms": 11.887,
+    "repair_ms": 15.706,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 18,
+    "generation_ms": 40.106,
+    "retry_ms": 10.494,
+    "repair_ms": 17.067,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 19,
+    "generation_ms": 38.289,
+    "retry_ms": 9.104,
+    "repair_ms": 16.922,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  },
+  {
+    "scenario": "timeout-then-retry",
+    "sample": 20,
+    "generation_ms": 46.822,
+    "retry_ms": 7.982,
+    "repair_ms": 12.46,
+    "calls": {
+      "prose": 1,
+      "Opening scene": 1,
+      "Second scene": 2,
+      "repair": 1
+    }
+  }
+]

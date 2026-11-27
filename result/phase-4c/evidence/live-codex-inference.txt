@@ -1,0 +1,6 @@
+Installed CLIs: codex-cli 0.172.0, agy 1.5.18.
+Disposable Codex SQLite state: False.
+Codex structured inference probe for catalog model gpt-6.2-sol.
+uvicorn.error.providers Codex CLI failed for Proof with exit code 1
+Codex inference blocked: HTTP 502 after 0.25s. Codex CLI failed. Check your sign-in, CLI version, and quota, then try again.
+Exit code 2

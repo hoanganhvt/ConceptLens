@@ -6,10 +6,14 @@ import ctypes
 import json
 import logging
 import os
+import queue
+import re
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from threading import Thread
+from time import monotonic
 from typing import Annotated, Literal
 from .prompt_files import prompt
 
@@ -21,6 +25,7 @@ from openai.lib._pydantic import to_strict_json_schema
 log = logging.getLogger("uvicorn.error").getChild("providers")
 Provider = Literal["openai", "codex", "gemini", "agy"]
 GoogleModel = Annotated[str, Field(max_length=128, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")]
+CLI_MODEL_ID = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}")
 
 
 class SettingsUpdate(BaseModel):
@@ -124,6 +129,107 @@ def codex_models(executable):
         return []
     return [dict(id=m["slug"],name=m.get("display_name") or m["slug"]) for m in catalog
             if isinstance(m,dict) and m.get("slug") and m.get("visibility")=="list"]
+
+
+def catalog_options(entries):
+    options = {}
+    for slug, name in entries:
+        if not isinstance(slug, str) or not CLI_MODEL_ID.fullmatch(slug):
+            raise ValueError("Invalid model ID")
+        if not isinstance(name, str) or not name.strip() or len(name) > 256:
+            raise ValueError("Invalid model name")
+        options[slug] = {"id": slug, "name": name.strip()}
+    return list(options.values())
+
+
+def codex_catalog():
+    exe = shutil.which("codex")
+    if not exe:
+        raise HTTPException(503, tr("Không tìm thấy Codex CLI.", "Codex CLI was not found."))
+    try:
+        with tempfile.TemporaryDirectory(prefix="study-codex-models-") as folder:
+            with subprocess.Popen([exe, "app-server", "--listen", "stdio://"], cwd=folder,
+                                  stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                  text=True, encoding="utf-8", env=cli_environment(),
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)) as child:
+                try:
+                    options = codex_catalog_rpc(child)
+                finally:
+                    child.stdin.close()
+                    try:
+                        child.wait(timeout=1)
+                    except subprocess.TimeoutExpired:
+                        child.kill()
+    except (TimeoutError, queue.Empty) as exc:
+        raise HTTPException(504, tr("Codex CLI tải danh sách model quá lâu.",
+                                    "Codex CLI timed out while listing models.")) from exc
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise HTTPException(502, tr("Codex CLI không trả về danh sách model hợp lệ. Kiểm tra phiên bản và đăng nhập.",
+                                    "Codex CLI did not return a valid model catalog. Check its version and sign-in.")) from exc
+    if not options:
+        raise HTTPException(502, tr("Codex CLI không trả về model nào.", "Codex CLI returned no models."))
+    return options
+
+
+def codex_catalog_rpc(child):
+    deadline = monotonic() + 10
+    replies = queue.SimpleQueue()
+
+    def receive():
+        try:
+            while line := child.stdout.readline(1_048_577):
+                if len(line) > 1_048_576:
+                    raise ValueError("CLI message too large")
+                replies.put(json.loads(line))
+        except (OSError, ValueError) as exc:
+            replies.put(exc)
+        finally:
+            replies.put(None)
+
+    def send(message):
+        child.stdin.write(json.dumps(message) + "\n")
+        child.stdin.flush()
+
+    def request(request_id, method, params):
+        send({"id": request_id, "method": method, "params": params})
+        while (remaining := deadline - monotonic()) > 0:
+            reply = replies.get(timeout=remaining)
+            if isinstance(reply, Exception):
+                raise reply
+            if reply is None or not isinstance(reply, dict):
+                raise ValueError("Codex CLI closed the catalog request")
+            if reply.get("id") == request_id:
+                if "error" in reply:
+                    raise ValueError("Codex CLI rejected the catalog request")
+                return reply["result"]
+        raise TimeoutError()
+
+    Thread(target=receive, daemon=True).start()
+    initialized = request(0, "initialize", {"clientInfo": {"name": "conceptlens", "version": "1.0"}})
+    if not isinstance(initialized, dict):
+        raise ValueError("Invalid initialization response")
+    send({"method": "initialized"})
+    params = {"limit": 100, "includeHidden": False}
+    entries = []
+    seen_cursors = set()
+    for request_id in range(1, 11):
+        page = request(request_id, "model/list", params)
+        if not isinstance(page["data"], list):
+            raise ValueError("Invalid model page")
+        for item in page["data"]:
+            hidden = item.get("hidden", False)
+            if not isinstance(hidden, bool):
+                raise ValueError("Invalid model visibility")
+            if not hidden:
+                entries.append((item["model"], item["displayName"]))
+        cursor = page["nextCursor"]
+        if cursor is None:
+            return catalog_options(entries)
+        if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+            raise ValueError("Invalid catalog cursor")
+        seen_cursors.add(cursor)
+        params["cursor"] = cursor
+    raise ValueError("Too many model pages")
 
 
 def public_settings(record):
